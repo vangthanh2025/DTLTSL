@@ -13,7 +13,7 @@ import CertificateEditModal from '../components/CertificateEditModal';
 import ConfirmDeleteModal from '../components/ConfirmDeleteModal';
 import PlusIcon from '../components/icons/PlusIcon';
 import CertificateAddModal from '../components/CertificateAddModal';
-import { transformGoogleDriveUrl } from '../utils/driveUploader';
+import { transformGoogleDriveUrl, deleteFromDrive, extractFileIdFromUrl } from '../utils/driveUploader';
 
 
 interface CertificatesProps {
@@ -102,11 +102,24 @@ const Certificates: React.FC<CertificatesProps> = ({ user, geminiApiKey }) => {
         return ['all', ...Array.from(years).sort((a, b) => Number(b) - Number(a))];
     }, [certificates]);
 
-    // FIX: Correctly handle date conversion for local state update. The `updatedData.date`
-    // from the modal is a Date object at runtime, which caused a type conflict. This fix
-    // ensures the Date object is correctly wrapped for the local state and for Firestore.
     const handleUpdateCertificate = async (updatedData: Partial<Certificate>) => {
         if (!editingCertificate) return;
+
+        // Check if the image was replaced and delete the old one from Drive
+        const oldImageUrl = editingCertificate.imageUrl;
+        const newImageUrl = updatedData.imageUrl;
+        if (newImageUrl && oldImageUrl && newImageUrl !== oldImageUrl) {
+            const oldFileId = extractFileIdFromUrl(oldImageUrl);
+            if (oldFileId) {
+                try {
+                    await deleteFromDrive(oldFileId);
+                } catch (deleteError) {
+                    // Log the error but don't block the update
+                    console.error("Failed to delete old image from Drive, but proceeding with update:", deleteError);
+                }
+            }
+        }
+
         try {
             const certDocRef = doc(db, 'Certificates', editingCertificate.id);
             const dataWithTimestamp = { ...updatedData, updatedAt: new Date() };
@@ -164,6 +177,12 @@ const Certificates: React.FC<CertificatesProps> = ({ user, geminiApiKey }) => {
     const handleDeleteCertificate = async () => {
         if (!deletingCertificate) return;
         try {
+            if (deletingCertificate.imageUrl) {
+                const fileId = extractFileIdFromUrl(deletingCertificate.imageUrl);
+                if (fileId) {
+                    await deleteFromDrive(fileId);
+                }
+            }
             const certDocRef = doc(db, 'Certificates', deletingCertificate.id);
             await deleteDoc(certDocRef);
             setCertificates(prevCerts => prevCerts.filter(c => c.id !== deletingCertificate.id));

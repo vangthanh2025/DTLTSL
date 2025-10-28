@@ -152,8 +152,7 @@ Hướng dẫn chi tiết: Trích xuất tiêu đề chính (name), ngày kết 
         }
     } catch (error) {
         console.error("Error processing image:", error);
-        const errorMessage = error instanceof Error ? error.message : String(error);
-        setErrors(prev => ({ ...prev, imageUrl: `Lỗi xử lý ảnh: ${errorMessage}` }));
+        setErrors(prev => ({ ...prev, imageUrl: 'Phần mềm không lấy được dữ liệu, đề nghị nhập liệu bằng tay.' }));
     } finally {
         setIsProcessing(false);
         setProcessingMessage('');

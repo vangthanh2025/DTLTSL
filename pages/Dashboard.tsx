@@ -22,9 +22,11 @@ interface DashboardProps {
   settings: AppSettings | null;
   geminiApiKey: string | null;
   onKeysUpdate: () => void;
+  onDepartmentsUpdate: () => void;
+  onTitlesUpdate: () => void;
 }
 
-const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onUserUpdate, departments, titles, settings, geminiApiKey, onKeysUpdate }) => {
+const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onUserUpdate, departments, titles, settings, geminiApiKey, onKeysUpdate, onDepartmentsUpdate, onTitlesUpdate }) => {
   const getDefaultPageForRole = (role: string | undefined): string => {
       switch (role) {
           case 'admin':
@@ -46,7 +48,13 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onUserUpdate, dep
         return <Profile user={user} onUserUpdate={onUserUpdate} departments={departments} titles={titles} settings={settings} />;
       case 'Quản trị':
         if (user.role === 'admin') {
-          return <Administration departments={departments} titles={titles} onKeysUpdate={onKeysUpdate} />;
+          return <Administration 
+                    departments={departments} 
+                    titles={titles} 
+                    onKeysUpdate={onKeysUpdate} 
+                    onDepartmentsUpdate={onDepartmentsUpdate}
+                    onTitlesUpdate={onTitlesUpdate}
+                 />;
         }
         return <p>Bạn không có quyền truy cập trang này.</p>;
       case 'Trợ lý AI':
@@ -88,7 +96,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onUserUpdate, dep
             />
         </div>
         
-        <main className="flex-1 p-4 md:p-6">
+        <main className="flex-1 p-4">
           {renderContent()}
         </main>
       </div>

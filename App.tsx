@@ -81,29 +81,29 @@ const App: React.FC = () => {
     }
   };
 
+  const fetchDepartments = async () => {
+      try {
+          const departmentsCollection = collection(db, 'Departments');
+          const departmentsSnapshot = await getDocs(departmentsCollection);
+          const departmentsList = departmentsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Department));
+          setDepartments(departmentsList);
+      } catch (error) {
+          console.error("Error fetching departments:", error);
+      }
+  };
+
+  const fetchTitles = async () => {
+      try {
+          const titlesCollection = collection(db, 'Titles');
+          const titlesSnapshot = await getDocs(titlesCollection);
+          const titlesList = titlesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Title));
+          setTitles(titlesList);
+      } catch (error) {
+          console.error("Error fetching titles:", error);
+      }
+  };
+
   useEffect(() => {
-    const fetchDepartments = async () => {
-        try {
-            const departmentsCollection = collection(db, 'Departments');
-            const departmentsSnapshot = await getDocs(departmentsCollection);
-            const departmentsList = departmentsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Department));
-            setDepartments(departmentsList);
-        } catch (error) {
-            console.error("Error fetching departments:", error);
-        }
-    };
-
-    const fetchTitles = async () => {
-        try {
-            const titlesCollection = collection(db, 'Titles');
-            const titlesSnapshot = await getDocs(titlesCollection);
-            const titlesList = titlesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Title));
-            setTitles(titlesList);
-        } catch (error) {
-            console.error("Error fetching titles:", error);
-        }
-    };
-
     const fetchSettings = async () => {
         try {
             const settingsCollection = collection(db, 'Settings');
@@ -161,6 +161,8 @@ const App: React.FC = () => {
       settings={settings}
       geminiApiKey={geminiApiKey}
       onKeysUpdate={fetchGeminiKey}
+      onDepartmentsUpdate={fetchDepartments}
+      onTitlesUpdate={fetchTitles}
     />
   ) : (
     <LoginPage onLoginSuccess={handleLoginSuccess} />
@@ -172,13 +174,15 @@ interface LoginPageProps {
 }
 
 const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => (
-  <div className="bg-gradient-to-br from-teal-50 to-sky-100 min-h-screen flex flex-col items-center justify-between p-4 font-sans">
-    <main className="flex-grow flex items-center justify-center w-full">
-      <LoginForm onLoginSuccess={onLoginSuccess} />
-    </main>
-    <footer className="w-full text-center py-4 text-gray-500 text-base">
-      Design by Nguyễn Trung Thành
-    </footer>
+  <div className="bg-gradient-to-br from-teal-50 to-sky-100 min-h-screen flex flex-col items-center justify-center p-4 font-sans">
+    <div className="relative -top-[50px]">
+        <main className="w-full">
+          <LoginForm onLoginSuccess={onLoginSuccess} />
+        </main>
+        <footer className="w-full text-center py-4 text-gray-500 text-base">
+          Design by Nguyễn Trung Thành
+        </footer>
+    </div>
   </div>
 );
 

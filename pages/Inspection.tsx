@@ -2,6 +2,8 @@
 
 
 
+
+
 import React, { useState, useMemo } from 'react';
 import { UserData, Certificate, Department, Title } from '../App';
 import PencilIcon from '../components/icons/PencilIcon';
@@ -74,7 +76,8 @@ const Inspection: React.FC<InspectionProps> = ({ currentUser, allUsers, allCerti
                 certificate
             }))
             .filter((item): item is { user: UserData; certificate: Certificate } => !!item.user)
-            .sort((a, b) => a.user.name.localeCompare(b.user.name, 'vi'));
+            // FIX: Explicitly type sort arguments to resolve 'localeCompare' on 'unknown' type error.
+            .sort((a: { user: UserData }, b: { user: UserData }) => a.user.name.localeCompare(b.user.name, 'vi'));
     }, [selectedCertificateName, allCertificates, allUsers, activeMode]);
     
     // --- Personnel Search Logic ---

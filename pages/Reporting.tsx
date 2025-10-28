@@ -1,4 +1,7 @@
 
+
+
+
 import React, { useState, useMemo, ReactNode } from 'react';
 import { UserData, Certificate, Department, Title, AppSettings } from '../App';
 import PrintIcon from '../components/icons/PrintIcon';
@@ -120,7 +123,8 @@ const Reporting: React.FC<ReportingProps> = ({ users, certificates, departments,
                     certificates.forEach(cert => {
                         const certYear = cert.date.toDate().getFullYear();
                         if (certYear >= settings.complianceStartYear && certYear <= settings.complianceEndYear) {
-                            userCreditsMap.set(cert.userId, (userCreditsMap.get(cert.userId) || 0) + (cert.credits || 0));
+                            // FIX: Explicitly cast cert.credits to a number to prevent type errors during arithmetic operation.
+                            userCreditsMap.set(cert.userId, (userCreditsMap.get(cert.userId) || 0) + (Number(cert.credits) || 0));
                         }
                     });
 
@@ -147,7 +151,7 @@ const Reporting: React.FC<ReportingProps> = ({ users, certificates, departments,
                 case 'title_detail': {
                     const userCreditsMap = new Map<string, number>();
                     filteredCertsByTime.forEach(cert => {
-                        userCreditsMap.set(cert.userId, (userCreditsMap.get(cert.userId) || 0) + (cert.credits || 0));
+                        userCreditsMap.set(cert.userId, (userCreditsMap.get(cert.userId) || 0) + (Number(cert.credits) || 0));
                     });
 
                     if (reportType === 'summary') {

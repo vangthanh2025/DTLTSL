@@ -1,7 +1,3 @@
-
-
-
-
 import React, { useState, useEffect } from 'react';
 import { db } from '../firebase';
 import { collection, getDocs, doc, updateDoc, deleteDoc } from 'firebase/firestore';
@@ -9,6 +5,7 @@ import { UserData, Certificate, AppSettings, Department, Title } from '../App';
 import Statistics from './Statistics';
 import Reporting from './Reporting';
 import Inspection from './Inspection';
+import { deleteFromDrive, extractFileIdFromUrl } from '../utils/driveUploader';
 
 
 interface ReportsProps {
@@ -51,6 +48,21 @@ const Reports: React.FC<ReportsProps> = ({ user, settings, departments, titles, 
     }, []);
 
     const handleCertificateUpdate = async (updatedData: Partial<Certificate>, originalCert: Certificate) => {
+        // Check if the image was replaced and delete the old one from Drive
+        const oldImageUrl = originalCert.imageUrl;
+        const newImageUrl = updatedData.imageUrl;
+        if (newImageUrl && oldImageUrl && newImageUrl !== oldImageUrl) {
+            const oldFileId = extractFileIdFromUrl(oldImageUrl);
+            if (oldFileId) {
+                try {
+                    await deleteFromDrive(oldFileId);
+                } catch (deleteError) {
+                    // Log the error but don't block the update
+                    console.error("Failed to delete old image from Drive, but proceeding with update:", deleteError);
+                }
+            }
+        }
+
         try {
             const certDocRef = doc(db, 'Certificates', originalCert.id);
             const dataToSave = { ...updatedData, updatedAt: new Date() };
@@ -74,6 +86,14 @@ const Reports: React.FC<ReportsProps> = ({ user, settings, departments, titles, 
 
     const handleCertificateDelete = async (certId: string) => {
         try {
+            const certToDelete = certificates.find(c => c.id === certId);
+            if (certToDelete && certToDelete.imageUrl) {
+                const fileId = extractFileIdFromUrl(certToDelete.imageUrl);
+                if (fileId) {
+                    await deleteFromDrive(fileId);
+                }
+            }
+
             const certDocRef = doc(db, 'Certificates', certId);
             await deleteDoc(certDocRef);
             setCertificates(prevCerts => prevCerts.filter(c => c.id !== certId));

@@ -1,7 +1,3 @@
-
-
-
-
 import React, { useState, useEffect, useMemo } from 'react';
 import { db } from '../firebase';
 import { collection, getDocs, doc, deleteDoc, addDoc, updateDoc } from 'firebase/firestore';
@@ -12,11 +8,14 @@ import PlusIcon from '../components/icons/PlusIcon';
 import UserAddModal from '../components/UserAddModal';
 import UserEditModal from '../components/UserEditModal';
 import ConfirmDeleteModal from '../components/ConfirmDeleteModal';
+import { GoogleGenAI } from '@google/genai';
 
 interface AdministrationProps {
     departments: Department[];
     titles: Title[];
     onKeysUpdate: () => void;
+    onDepartmentsUpdate: () => void;
+    onTitlesUpdate: () => void;
 }
 
 const roleNames: { [key: string]: string } = {
@@ -26,7 +25,7 @@ const roleNames: { [key: string]: string } = {
     reporter_user: 'Nhân viên & Báo cáo',
 };
 
-const Administration: React.FC<AdministrationProps> = ({ departments, titles, onKeysUpdate }) => {
+const Administration: React.FC<AdministrationProps> = ({ departments, titles, onKeysUpdate, onDepartmentsUpdate, onTitlesUpdate }) => {
     const [users, setUsers] = useState<UserData[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -50,26 +49,35 @@ const Administration: React.FC<AdministrationProps> = ({ departments, titles, on
     const [newKeyInput, setNewKeyInput] = useState('');
     const [deletingKey, setDeletingKey] = useState<GeminiKey | null>(null);
     const [keyLoading, setKeyLoading] = useState(true);
+    const [keyCheckStatus, setKeyCheckStatus] = useState<{ [keyId: string]: 'idle' | 'checking' | 'valid' | 'invalid' }>({});
 
+
+    // Category Management State
+    const [localDepartments, setLocalDepartments] = useState<Department[]>([]);
+    const [localTitles, setLocalTitles] = useState<Title[]>([]);
+    const [newDepartmentName, setNewDepartmentName] = useState('');
+    const [newTitleName, setNewTitleName] = useState('');
+    const [editingItem, setEditingItem] = useState<{ type: 'department' | 'title', id: string } | null>(null);
+    const [editedName, setEditedName] = useState('');
+    const [deletingItem, setDeletingItem] = useState<{ type: 'department' | 'title', item: Department | Title } | null>(null);
 
     const departmentMap = new Map(departments.map(dept => [dept.id, dept.name]));
     const titleMap = new Map(titles.map(title => [title.id, title.name]));
 
     useEffect(() => {
         const fetchAllData = async () => {
-            setLoading(true);
-            setSettingsLoading(true);
-            setKeyLoading(true);
+            setLoading(true); setSettingsLoading(true); setKeyLoading(true);
             try {
-                // Fetch Users
-                const usersCollection = collection(db, 'Users');
-                const userSnapshot = await getDocs(usersCollection);
+                // Fetch Users, Settings, and Keys
+                const [userSnapshot, settingsSnapshot, keysSnapshot] = await Promise.all([
+                    getDocs(collection(db, 'Users')),
+                    getDocs(collection(db, 'Settings')),
+                    getDocs(collection(db, 'KeyGemini'))
+                ]);
+                
                 const userList = userSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as UserData));
                 setUsers(userList);
 
-                // Fetch Settings
-                const settingsCollection = collection(db, 'Settings');
-                const settingsSnapshot = await getDocs(settingsCollection);
                 if (!settingsSnapshot.empty) {
                     const settingsDoc = settingsSnapshot.docs[0];
                     const data = settingsDoc.data();
@@ -79,12 +87,8 @@ const Administration: React.FC<AdministrationProps> = ({ departments, titles, on
                 } else {
                     const currentYear = new Date().getFullYear().toString();
                     setComplianceStartYear(currentYear);
-                    console.warn("Settings document not found. A new one may be created on save.");
                 }
 
-                 // Fetch Gemini Keys
-                const keysCollection = collection(db, 'KeyGemini');
-                const keysSnapshot = await getDocs(keysCollection);
                 const keyList = keysSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as GeminiKey));
                 setGeminiKeys(keyList);
 
@@ -92,14 +96,20 @@ const Administration: React.FC<AdministrationProps> = ({ departments, titles, on
                 console.error("Error fetching data: ", err);
                 setError('Không thể tải dữ liệu.');
             } finally {
-                setLoading(false);
-                setSettingsLoading(false);
-                setKeyLoading(false);
+                setLoading(false); setSettingsLoading(false); setKeyLoading(false);
             }
         };
-
         fetchAllData();
     }, []);
+
+    useEffect(() => {
+        setLocalDepartments([...departments].sort((a, b) => a.name.localeCompare(b.name, 'vi')));
+    }, [departments]);
+    
+    useEffect(() => {
+        setLocalTitles([...titles].sort((a, b) => a.name.localeCompare(b.name, 'vi')));
+    }, [titles]);
+
 
     const filteredUsers = useMemo(() => {
         return users.filter(user => 
@@ -109,338 +119,274 @@ const Administration: React.FC<AdministrationProps> = ({ departments, titles, on
 
     const handleAddUser = async (newUserData: Omit<UserData, 'id'>) => {
         try {
-            const usersCollection = collection(db, 'Users');
-            const docRef = await addDoc(usersCollection, newUserData);
-            const newUserWithId = { ...newUserData, id: docRef.id } as UserData;
-            setUsers(prev => [...prev, newUserWithId]);
+            const docRef = await addDoc(collection(db, 'Users'), newUserData);
+            setUsers(prev => [...prev, { ...newUserData, id: docRef.id } as UserData]);
             setIsAddModalOpen(false);
-        } catch (err) {
-            console.error("Error adding user: ", err);
-        }
+        } catch (err) { console.error("Error adding user: ", err); }
     };
 
     const handleUpdateUser = async (updatedData: Partial<UserData>) => {
         if (!editingUser) return;
         try {
-            const userDocRef = doc(db, 'Users', editingUser.id);
-            await updateDoc(userDocRef, updatedData);
+            await updateDoc(doc(db, 'Users', editingUser.id), updatedData);
             setUsers(prev => prev.map(u => u.id === editingUser.id ? { ...u, ...updatedData } : u));
             setEditingUser(null);
-        } catch (err) {
-            console.error("Error updating user: ", err);
-        }
+        } catch (err) { console.error("Error updating user: ", err); }
     };
 
     const handleDeleteUser = async () => {
         if (!deletingUser) return;
         try {
-            const userDocRef = doc(db, 'Users', deletingUser.id);
-            await deleteDoc(userDocRef);
+            await deleteDoc(doc(db, 'Users', deletingUser.id));
             setUsers(prev => prev.filter(u => u.id !== deletingUser.id));
             setDeletingUser(null);
-        } catch (err) {
-            console.error("Error deleting user: ", err);
-        }
+        } catch (err) { console.error("Error deleting user: ", err); }
     };
 
     const handleSaveSettings = async (e: React.FormEvent) => {
         e.preventDefault();
-        setSaveStatus('saving');
-        setSettingsError(null);
+        setSaveStatus('saving'); setSettingsError(null);
         try {
             const startYear = parseInt(complianceStartYear, 10);
             const endYear = parseInt(complianceEndYear, 10);
-
-            if (isNaN(startYear) || isNaN(endYear) || startYear < 2000 || startYear > 2100 || endYear < 2000 || endYear > 2100) {
-                 throw new Error("Năm bắt đầu hoặc kết thúc không hợp lệ.");
+            if (isNaN(startYear) || isNaN(endYear) || startYear < 2000 || endYear < startYear) {
+                 throw new Error("Năm không hợp lệ.");
             }
-            if (endYear < startYear) {
-                throw new Error("Năm kết thúc không được nhỏ hơn năm bắt đầu.");
-            }
-
-            const settingsData = { 
-                complianceStartYear: startYear,
-                complianceEndYear: endYear
-            };
-
+            const settingsData = { complianceStartYear: startYear, complianceEndYear: endYear };
             if (settingsDocId) {
-                const settingsDocRef = doc(db, 'Settings', settingsDocId);
-                await updateDoc(settingsDocRef, settingsData);
+                await updateDoc(doc(db, 'Settings', settingsDocId), settingsData);
             } else {
-                const settingsCollection = collection(db, 'Settings');
-                const newDocRef = await addDoc(settingsCollection, settingsData);
+                const newDocRef = await addDoc(collection(db, 'Settings'), settingsData);
                 setSettingsDocId(newDocRef.id);
             }
-            
             setSaveStatus('success');
-            setTimeout(() => setSaveStatus('idle'), 2000); 
         } catch (err) {
-            console.error("Error saving settings: ", err);
             setSettingsError(err instanceof Error ? err.message : "Lỗi không xác định.");
             setSaveStatus('error');
-            setTimeout(() => setSaveStatus('idle'), 4000);
+        } finally {
+            setTimeout(() => setSaveStatus('idle'), 3000);
         }
     };
 
+    // --- Key Management ---
     const handleAddKey = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!newKeyInput.trim()) return;
         try {
-            const keysCollection = collection(db, 'KeyGemini');
-            const docRef = await addDoc(keysCollection, { key: newKeyInput.trim() });
+            const docRef = await addDoc(collection(db, 'KeyGemini'), { key: newKeyInput.trim() });
             setGeminiKeys(prev => [...prev, { id: docRef.id, key: newKeyInput.trim() }]);
             setNewKeyInput('');
-            onKeysUpdate(); // Refresh app-wide key
-        } catch (err) {
-            console.error("Error adding Gemini Key:", err);
-        }
+            onKeysUpdate();
+        } catch (err) { console.error("Error adding Gemini Key:", err); }
     };
 
     const handleDeleteKey = async () => {
         if (!deletingKey) return;
         try {
-            const keyDocRef = doc(db, 'KeyGemini', deletingKey.id);
-            await deleteDoc(keyDocRef);
+            await deleteDoc(doc(db, 'KeyGemini', deletingKey.id));
             setGeminiKeys(prev => prev.filter(k => k.id !== deletingKey.id));
             setDeletingKey(null);
-            onKeysUpdate(); // Refresh app-wide key
-        } catch (err) {
-            console.error("Error deleting Gemini Key:", err);
+            onKeysUpdate();
+        } catch (err) { console.error("Error deleting Gemini Key:", err); }
+    };
+
+    const handleCheckKey = async (keyToCheck: GeminiKey) => {
+        setKeyCheckStatus(prev => ({ ...prev, [keyToCheck.id]: 'checking' }));
+        try {
+            const ai = new GoogleGenAI({ apiKey: keyToCheck.key });
+            await ai.models.generateContent({
+                model: 'gemini-2.5-flash',
+                contents: 'Hi',
+            });
+            setKeyCheckStatus(prev => ({ ...prev, [keyToCheck.id]: 'valid' }));
+        } catch (error) {
+            console.error("Key check failed:", error);
+            setKeyCheckStatus(prev => ({ ...prev, [keyToCheck.id]: 'invalid' }));
+        } finally {
+            setTimeout(() => {
+                setKeyCheckStatus(prev => ({ ...prev, [keyToCheck.id]: 'idle' }));
+            }, 5000); // Reset status after 5 seconds
         }
     };
 
-    const maskKey = (key: string) => {
-        if (key.length < 16) return '***';
-        return `${key.substring(0, 8)}...${key.substring(key.length - 8)}`;
+    // --- Category Management ---
+    const handleAddDepartment = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!newDepartmentName.trim()) return;
+        try {
+            await addDoc(collection(db, 'Departments'), { name: newDepartmentName.trim() });
+            setNewDepartmentName('');
+            onDepartmentsUpdate();
+        } catch (err) { console.error("Error adding department:", err); }
     };
 
-    const renderUserManagement = () => {
-        if (loading) return <div className="text-center p-8">Đang tải danh sách người dùng...</div>;
-        if (error) return <div className="text-center p-8 text-red-600">{error}</div>;
-
-        return (
-             <div className="bg-white p-6 rounded-lg shadow-md mt-6">
-                <div className="flex flex-col sm:flex-row justify-between items-center mb-4 gap-4">
-                    <h3 className="text-lg font-semibold text-teal-700">Quản lý người dùng</h3>
-                     <input
-                        type="text"
-                        placeholder="Tìm kiếm theo họ tên..."
-                        value={searchTerm}
-                        onChange={(e) => setSearchTerm(e.target.value)}
-                        className="w-full sm:w-1/3 px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-500"
-                    />
-                    <button
-                        onClick={() => setIsAddModalOpen(true)}
-                        className="bg-teal-600 text-white font-semibold py-2 px-4 rounded-lg flex items-center justify-center gap-2 hover:bg-teal-700 transition-colors w-full sm:w-auto"
-                    >
-                        <PlusIcon className="h-5 w-5" />
-                        <span>Thêm người dùng</span>
-                    </button>
-                </div>
-                <div className="overflow-x-auto">
-                    <table className="min-w-full bg-white">
-                        <thead className="bg-gray-50">
-                            <tr>
-                                {['#', 'Tên đăng nhập', 'Họ tên', 'Khoa/Phòng', 'Chức danh', 'Vai trò', 'Trạng thái', 'Hành động'].map(header => (
-                                    <th key={header} className="px-6 py-3 text-left text-sm font-medium text-gray-500 uppercase tracking-wider">
-                                        {header}
-                                    </th>
-                                ))}
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-200">
-                            {filteredUsers.map((user, index) => (
-                                <tr key={user.id} className="hover:bg-gray-50">
-                                    <td className="px-6 py-4 whitespace-nowrap text-base text-gray-900">{index + 1}</td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-base text-gray-500">{user.username}</td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-base font-medium text-gray-900">{user.name}</td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-base text-gray-500">{departmentMap.get(user.departmentId) || 'Chưa cập nhật'}</td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-base text-gray-500">{titleMap.get(user.titleId) || 'Chưa cập nhật'}</td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-base text-gray-500">{roleNames[user.role] || user.role}</td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-base">
-                                        <span className={`px-2 inline-flex text-sm leading-5 font-semibold rounded-full ${user.status ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
-                                            {user.status ? 'Hoạt động' : 'Vô hiệu hóa'}
-                                        </span>
-                                    </td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-base font-medium">
-                                        <button onClick={() => setEditingUser(user)} className="text-teal-600 hover:text-teal-900 mr-4">
-                                            <PencilIcon className="h-5 w-5" />
-                                        </button>
-                                        <button onClick={() => setDeletingUser(user)} className="text-red-600 hover:text-red-900">
-                                            <TrashIcon className="h-5 w-5" />
-                                        </button>
-                                    </td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        )
-    }
-
-    const renderSettingsTab = () => {
-        if (settingsLoading) return <div className="text-center p-8">Đang tải cài đặt...</div>;
-        
-        return (
-            <div className="bg-white p-6 rounded-lg shadow-md mt-6 max-w-2xl">
-                <form onSubmit={handleSaveSettings}>
-                    <h3 className="text-lg font-semibold text-gray-800">Cài đặt chu kỳ tuân thủ</h3>
-                    <p className="text-base text-gray-500 mt-1 mb-4">
-                        Bạn hãy nhập năm bắt đầu và kết thúc chu kỳ để phần mềm thống kê, báo cáo đúng chu kỳ bạn đã thiết lập.
-                    </p>
-                    <div className="flex items-end gap-4">
-                        <div>
-                            <label htmlFor="complianceStartYear" className="block text-base font-medium text-gray-700">
-                                Năm bắt đầu chu kỳ
-                            </label>
-                            <input
-                                type="number"
-                                id="complianceStartYear"
-                                value={complianceStartYear}
-                                onChange={(e) => setComplianceStartYear(e.target.value)}
-                                className="mt-1 w-40 px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-teal-500 focus:border-teal-500"
-                                placeholder="YYYY"
-                                min="2000"
-                                max="2100"
-                            />
-                        </div>
-                        <div>
-                            <label htmlFor="complianceEndYear" className="block text-base font-medium text-gray-700">
-                                Năm kết thúc chu kỳ
-                            </label>
-                            <input
-                                type="number"
-                                id="complianceEndYear"
-                                value={complianceEndYear}
-                                onChange={(e) => setComplianceEndYear(e.target.value)}
-                                className="mt-1 w-40 px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-teal-500 focus:border-teal-500"
-                                placeholder="YYYY"
-                                min="2000"
-                                max="2100"
-                            />
-                        </div>
-                        <button
-                            type="submit"
-                            disabled={saveStatus === 'saving'}
-                            className="bg-teal-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-teal-700 transition-colors disabled:bg-teal-400 h-10"
-                        >
-                            {saveStatus === 'saving' ? 'Đang lưu...' : 'Lưu thay đổi'}
-                        </button>
-                    </div>
-                     {saveStatus === 'success' && <p className="text-base text-green-600 mt-2">Đã lưu thay đổi thành công!</p>}
-                     {saveStatus === 'error' && <p className="text-base text-red-600 mt-2">{settingsError || 'Lưu thất bại. Vui lòng thử lại.'}</p>}
-                </form>
-            </div>
-        );
+    const handleAddTitle = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!newTitleName.trim()) return;
+        try {
+            await addDoc(collection(db, 'Titles'), { name: newTitleName.trim() });
+            setNewTitleName('');
+            onTitlesUpdate();
+        } catch (err) { console.error("Error adding title:", err); }
     };
     
-    const renderKeyManagement = () => {
-        if (keyLoading) return <div className="text-center p-8">Đang tải danh sách API key...</div>;
-        return (
-            <div className="bg-white p-6 rounded-lg shadow-md mt-6 max-w-3xl">
-                <h3 className="text-lg font-semibold text-gray-800">Quản lý Gemini API Key</h3>
-                <p className="text-base text-gray-500 mt-1 mb-4">
-                    Thêm và quản lý các API key để sử dụng cho tính năng AI. Ứng dụng sẽ tự động sử dụng key đầu tiên trong danh sách.
-                </p>
-                <form onSubmit={handleAddKey} className="flex items-center gap-3 mb-6">
-                    <input
-                        type="text"
-                        value={newKeyInput}
-                        onChange={(e) => setNewKeyInput(e.target.value)}
-                        placeholder="Dán API Key mới vào đây"
-                        className="flex-grow px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-500"
-                    />
-                    <button
-                        type="submit"
-                        className="bg-teal-600 text-white font-semibold py-2 px-4 rounded-lg flex items-center justify-center gap-2 hover:bg-teal-700 transition-colors"
-                    >
-                        Thêm Key
-                    </button>
-                </form>
-
-                <div className="space-y-2">
-                    {geminiKeys.map(k => (
-                        <div key={k.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-md">
-                            <span className="font-mono text-gray-700">{maskKey(k.key)}</span>
-                            <button onClick={() => setDeletingKey(k)} className="text-red-500 hover:text-red-700">
-                                <TrashIcon className="h-5 w-5" />
-                            </button>
-                        </div>
-                    ))}
-                    {geminiKeys.length === 0 && (
-                        <p className="text-gray-500 text-center py-4">Chưa có API key nào được thêm.</p>
-                    )}
-                </div>
-            </div>
-        );
+    const handleStartEdit = (type: 'department' | 'title', item: Department | Title) => {
+        setEditingItem({ type, id: item.id });
+        setEditedName(item.name);
     };
+    const handleCancelEdit = () => { setEditingItem(null); setEditedName(''); };
+    
+    const handleSaveEdit = async () => {
+        if (!editingItem || !editedName.trim()) return;
+        const collectionName = editingItem.type === 'department' ? 'Departments' : 'Titles';
+        try {
+            await updateDoc(doc(db, collectionName, editingItem.id), { name: editedName.trim() });
+            handleCancelEdit();
+            if (editingItem.type === 'department') onDepartmentsUpdate(); else onTitlesUpdate();
+        } catch (err) { console.error(`Error updating ${editingItem.type}:`, err); }
+    };
+
+    const handleConfirmDelete = async () => {
+        if (!deletingItem) return;
+        const collectionName = deletingItem.type === 'department' ? 'Departments' : 'Titles';
+        try {
+            await deleteDoc(doc(db, collectionName, deletingItem.item.id));
+            setDeletingItem(null);
+            if (deletingItem.type === 'department') onDepartmentsUpdate(); else onTitlesUpdate();
+        } catch (err) { console.error(`Error deleting ${deletingItem.type}:`, err); }
+    };
+
+    const maskKey = (key: string) => key.length < 16 ? '***' : `${key.substring(0, 8)}...${key.substring(key.length - 8)}`;
+
+    const renderUserManagement = () => (
+        <div className="bg-white p-6 rounded-lg shadow-md mt-6">
+            <div className="flex flex-col sm:flex-row justify-between items-center mb-4 gap-4">
+                <h3 className="text-lg font-semibold text-teal-700">Quản lý người dùng</h3>
+                <input type="text" placeholder="Tìm kiếm theo họ tên..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full sm:w-1/3 px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-500" />
+                <button onClick={() => setIsAddModalOpen(true)} className="bg-teal-600 text-white font-semibold py-2 px-4 rounded-lg flex items-center justify-center gap-2 hover:bg-teal-700 transition-colors w-full sm:w-auto"><PlusIcon className="h-5 w-5" /><span>Thêm người dùng</span></button>
+            </div>
+            <div className="overflow-x-auto">
+                <table className="min-w-full bg-white"><thead className="bg-gray-50"><tr>{['#', 'Tên đăng nhập', 'Họ tên', 'Khoa/Phòng', 'Chức danh', 'Vai trò', 'Trạng thái', 'Hành động'].map(header => (<th key={header} className="px-6 py-3 text-left text-sm font-medium text-gray-500 uppercase tracking-wider">{header}</th>))}</tr></thead>
+                    <tbody className="divide-y divide-gray-200">{filteredUsers.map((user, index) => (<tr key={user.id} className="hover:bg-gray-50">
+                        <td className="px-6 py-4 whitespace-nowrap text-base text-gray-900">{index + 1}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-base text-gray-500">{user.username}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-base font-medium text-gray-900">{user.name}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-base text-gray-500">{departmentMap.get(user.departmentId) || 'Chưa cập nhật'}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-base text-gray-500">{titleMap.get(user.titleId) || 'Chưa cập nhật'}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-base text-gray-500">{roleNames[user.role] || user.role}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-base"><span className={`px-2 inline-flex text-sm leading-5 font-semibold rounded-full ${user.status ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>{user.status ? 'Hoạt động' : 'Vô hiệu hóa'}</span></td>
+                        <td className="px-6 py-4 whitespace-nowrap text-base font-medium">
+                            <button onClick={() => setEditingUser(user)} className="text-teal-600 hover:text-teal-900 mr-4"><PencilIcon className="h-5 w-5" /></button>
+                            <button onClick={() => setDeletingUser(user)} className="text-red-600 hover:text-red-900"><TrashIcon className="h-5 w-5" /></button>
+                        </td>
+                    </tr>))}</tbody>
+                </table>
+            </div>
+        </div>
+    );
+
+    const renderCategoryManagement = () => (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mt-6">
+            <div className="bg-white p-6 rounded-lg shadow-md flex flex-col">
+                <h3 className="text-lg font-semibold text-teal-700 mb-4">Quản lý Khoa/Phòng</h3>
+                <form onSubmit={handleAddDepartment} className="flex gap-2 mb-4"><input type="text" value={newDepartmentName} onChange={(e) => setNewDepartmentName(e.target.value)} placeholder="Tên khoa/phòng mới" className="flex-grow input-style" required /><button type="submit" className="btn-primary flex-shrink-0">Thêm</button></form>
+                <ul className="space-y-2 flex-1 overflow-y-auto max-h-96">{localDepartments.map(dept => (<li key={dept.id} className="flex items-center justify-between p-2 rounded hover:bg-gray-50 group">{editingItem?.id === dept.id ? (<div className="flex-grow flex items-center gap-2"><input value={editedName} onChange={e => setEditedName(e.target.value)} className="input-style flex-grow" autoFocus onKeyDown={(e) => e.key === 'Enter' && handleSaveEdit()} /><button onClick={handleSaveEdit} className="text-green-600 font-semibold">Lưu</button><button onClick={handleCancelEdit} className="text-gray-500">Hủy</button></div>) : (<><span className="text-base text-gray-800">{dept.name}</span><div className="flex items-center gap-3 opacity-0 group-hover:opacity-100 transition-opacity"><button onClick={() => handleStartEdit('department', dept)} className="text-teal-600 hover:text-teal-900"><PencilIcon className="h-5 w-5" /></button><button onClick={() => setDeletingItem({ type: 'department', item: dept })} className="text-red-600 hover:text-red-900"><TrashIcon className="h-5 w-5" /></button></div></>)}</li>))}</ul>
+            </div>
+            <div className="bg-white p-6 rounded-lg shadow-md flex flex-col">
+                <h3 className="text-lg font-semibold text-teal-700 mb-4">Quản lý Chức danh</h3>
+                <form onSubmit={handleAddTitle} className="flex gap-2 mb-4"><input type="text" value={newTitleName} onChange={(e) => setNewTitleName(e.target.value)} placeholder="Tên chức danh mới" className="flex-grow input-style" required /><button type="submit" className="btn-primary flex-shrink-0">Thêm</button></form>
+                <ul className="space-y-2 flex-1 overflow-y-auto max-h-96">{localTitles.map(title => (<li key={title.id} className="flex items-center justify-between p-2 rounded hover:bg-gray-50 group">{editingItem?.id === title.id ? (<div className="flex-grow flex items-center gap-2"><input value={editedName} onChange={e => setEditedName(e.target.value)} className="input-style flex-grow" autoFocus onKeyDown={(e) => e.key === 'Enter' && handleSaveEdit()} /><button onClick={handleSaveEdit} className="text-green-600 font-semibold">Lưu</button><button onClick={handleCancelEdit} className="text-gray-500">Hủy</button></div>) : (<><span className="text-base text-gray-800">{title.name}</span><div className="flex items-center gap-3 opacity-0 group-hover:opacity-100 transition-opacity"><button onClick={() => handleStartEdit('title', title)} className="text-teal-600 hover:text-teal-900"><PencilIcon className="h-5 w-5" /></button><button onClick={() => setDeletingItem({ type: 'title', item: title })} className="text-red-600 hover:text-red-900"><TrashIcon className="h-5 w-5" /></button></div></>)}</li>))}</ul>
+            </div>
+        </div>
+    );
+    
+    const renderSettingsTab = () => (
+        <div className="bg-white p-6 rounded-lg shadow-md mt-6 max-w-2xl">
+            <form onSubmit={handleSaveSettings}><h3 className="text-lg font-semibold text-gray-800">Cài đặt chu kỳ tuân thủ</h3><p className="text-base text-gray-500 mt-1 mb-4">Nhập năm bắt đầu và kết thúc chu kỳ để hệ thống thống kê chính xác.</p>
+                <div className="flex items-end gap-4"><label className="block text-base font-medium text-gray-700">Năm bắt đầu<input type="number" value={complianceStartYear} onChange={(e) => setComplianceStartYear(e.target.value)} className="mt-1 w-40 input-style" placeholder="YYYY" min="2000" max="2100" /></label><label className="block text-base font-medium text-gray-700">Năm kết thúc<input type="number" value={complianceEndYear} onChange={(e) => setComplianceEndYear(e.target.value)} className="mt-1 w-40 input-style" placeholder="YYYY" min="2000" max="2100" /></label><button type="submit" disabled={saveStatus === 'saving'} className="btn-primary h-10">{saveStatus === 'saving' ? 'Đang lưu...' : 'Lưu'}</button></div>
+                {saveStatus === 'success' && <p className="text-base text-green-600 mt-2">Đã lưu thay đổi!</p>}
+                {saveStatus === 'error' && <p className="text-base text-red-600 mt-2">{settingsError || 'Lưu thất bại.'}</p>}
+            </form>
+        </div>
+    );
+    
+    const renderKeyManagement = () => (
+        <div className="bg-white p-6 rounded-lg shadow-md mt-6 max-w-3xl">
+            <h3 className="text-lg font-semibold text-gray-800">Quản lý API Key</h3>
+            <p className="text-base text-gray-500 mt-1 mb-4">Thêm, xóa và kiểm tra trạng thái API key. Ứng dụng sẽ sử dụng key đầu tiên trong danh sách.</p>
+            <form onSubmit={handleAddKey} className="flex items-center gap-3 mb-6">
+                <input type="text" value={newKeyInput} onChange={(e) => setNewKeyInput(e.target.value)} placeholder="Dán API Key mới vào đây" className="flex-grow px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-500" />
+                <button type="submit" className="btn-primary">Thêm Key</button>
+            </form>
+            <div className="space-y-2">
+                {geminiKeys.map(k => {
+                    const status = keyCheckStatus[k.id] || 'idle';
+                    return (
+                        <div key={k.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-md min-h-[58px]">
+                            <span className="font-mono text-gray-700">{maskKey(k.key)}</span>
+                            <div className="flex items-center gap-4">
+                                <div className="w-28 text-right">
+                                    {status === 'idle' && (
+                                        <button onClick={() => handleCheckKey(k)} className="text-sm font-semibold text-blue-600 hover:text-blue-800 transition-colors">Kiểm tra</button>
+                                    )}
+                                    {status === 'checking' && (
+                                        <span className="text-sm text-gray-500 italic">Đang kiểm tra...</span>
+                                    )}
+                                    {status === 'valid' && (
+                                        <span className="text-sm font-semibold text-green-600 flex items-center justify-end gap-1">
+                                            <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd"></path></svg>
+                                            Hợp lệ
+                                        </span>
+                                    )}
+                                    {status === 'invalid' && (
+                                        <span className="text-sm font-semibold text-red-600 flex items-center justify-end gap-1">
+                                            <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd"></path></svg>
+                                            Không hợp lệ
+                                        </span>
+                                    )}
+                                </div>
+                                <button onClick={() => setDeletingKey(k)} className="text-red-500 hover:text-red-700"><TrashIcon className="h-5 w-5" /></button>
+                            </div>
+                        </div>
+                    );
+                })}
+                {geminiKeys.length === 0 && (<p className="text-gray-500 text-center py-4">Chưa có API key nào.</p>)}
+            </div>
+        </div>
+    );
+
+    if (loading || settingsLoading || keyLoading) return <div className="text-center p-8">Đang tải dữ liệu quản trị...</div>;
+    if (error) return <div className="text-center p-8 text-red-600">{error}</div>;
 
     return (
         <div>
             <h1 className="text-2xl font-bold text-teal-800 mb-4">Quản trị hệ thống</h1>
             <div className="border-b border-gray-200">
                 <nav className="-mb-px flex space-x-8" aria-label="Tabs">
-                    <button 
-                        onClick={() => setActiveTab('userManagement')}
-                        className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-base ${activeTab === 'userManagement' ? 'border-teal-500 text-teal-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}
-                    >
-                        Quản lý người dùng
-                    </button>
-                    <button 
-                        onClick={() => setActiveTab('geminiKeyManagement')}
-                        className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-base ${activeTab === 'geminiKeyManagement' ? 'border-teal-500 text-teal-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}
-                    >
-                        Quản lý Key Gemini
-                    </button>
-                    <button 
-                        onClick={() => setActiveTab('settings')}
-                        className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-base ${activeTab === 'settings' ? 'border-teal-500 text-teal-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}
-                    >
-                        Cài đặt
-                    </button>
+                    <button onClick={() => setActiveTab('userManagement')} className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-base ${activeTab === 'userManagement' ? 'border-teal-500 text-teal-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}>Quản lý người dùng</button>
+                    <button onClick={() => setActiveTab('categoryManagement')} className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-base ${activeTab === 'categoryManagement' ? 'border-teal-500 text-teal-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}>Quản lý Danh mục</button>
+                    <button onClick={() => setActiveTab('geminiKeyManagement')} className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-base ${activeTab === 'geminiKeyManagement' ? 'border-teal-500 text-teal-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}>Quản lý API</button>
+                    <button onClick={() => setActiveTab('settings')} className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-base ${activeTab === 'settings' ? 'border-teal-500 text-teal-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}>Cài đặt</button>
                 </nav>
             </div>
             
             {activeTab === 'userManagement' && renderUserManagement()}
+            {activeTab === 'categoryManagement' && renderCategoryManagement()}
             {activeTab === 'geminiKeyManagement' && renderKeyManagement()}
             {activeTab === 'settings' && renderSettingsTab()}
 
-
-            {isAddModalOpen && (
-                <UserAddModal
-                    departments={departments}
-                    titles={titles}
-                    onAdd={handleAddUser}
-                    onClose={() => setIsAddModalOpen(false)}
-                />
-            )}
-
-            {editingUser && (
-                <UserEditModal
-                    user={editingUser}
-                    departments={departments}
-                    titles={titles}
-                    onSave={handleUpdateUser}
-                    onClose={() => setEditingUser(null)}
-                />
-            )}
+            {isAddModalOpen && <UserAddModal departments={departments} titles={titles} onAdd={handleAddUser} onClose={() => setIsAddModalOpen(false)} />}
+            {editingUser && <UserEditModal user={editingUser} departments={departments} titles={titles} onSave={handleUpdateUser} onClose={() => setEditingUser(null)} />}
+            {deletingUser && <ConfirmDeleteModal message={`Bạn có chắc chắn muốn xóa người dùng "${deletingUser.name}"?`} onConfirm={handleDeleteUser} onClose={() => setDeletingUser(null)} />}
+            {deletingKey && <ConfirmDeleteModal message={`Bạn có chắc chắn muốn xóa API Key "${maskKey(deletingKey.key)}"?`} onConfirm={handleDeleteKey} onClose={() => setDeletingKey(null)} />}
+            {deletingItem && <ConfirmDeleteModal message={`Bạn có chắc chắn muốn xóa "${deletingItem.item.name}"?`} onConfirm={handleConfirmDelete} onClose={() => setDeletingItem(null)} />}
             
-            {deletingUser && (
-                <ConfirmDeleteModal
-                    message={`Bạn có chắc chắn muốn xóa người dùng "${deletingUser.name}"? Hành động này không thể hoàn tác.`}
-                    onConfirm={handleDeleteUser}
-                    onClose={() => setDeletingUser(null)}
-                />
-            )}
-
-             {deletingKey && (
-                <ConfirmDeleteModal
-                    message={`Bạn có chắc chắn muốn xóa API Key "${maskKey(deletingKey.key)}"?`}
-                    onConfirm={handleDeleteKey}
-                    onClose={() => setDeletingKey(null)}
-                />
-            )}
+            <style>{`
+                .input-style { box-sizing: border-box; width: 100%; padding: 0.5rem 0.75rem; border: 1px solid #D1D5DB; border-radius: 0.375rem; box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05); }
+                .input-style:focus { outline: 2px solid transparent; outline-offset: 2px; --tw-ring-color: #14B8A6; box-shadow: 0 0 0 2px var(--tw-ring-color); border-color: #14B8A6; }
+                .btn-primary { background-color: #0D9488; color: white; font-weight: 600; padding: 0.5rem 1rem; border-radius: 0.5rem; transition: background-color 0.2s; border: none; }
+                .btn-primary:hover { background-color: #0F766E; } .btn-primary:disabled { background-color: #5EEAD4; cursor: not-allowed; }
+            `}</style>
         </div>
     );
 };
