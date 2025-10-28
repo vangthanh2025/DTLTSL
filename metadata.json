@@ -1,0 +1,7 @@
+{
+  "name": "DTLTSL",
+  "description": "A responsive login screen for a Continuing Education Management System, built with React, TypeScript, and Tailwind CSS to replicate a specific design.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
