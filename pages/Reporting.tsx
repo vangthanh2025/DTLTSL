@@ -1,7 +1,4 @@
 
-
-
-
 import React, { useState, useMemo, ReactNode } from 'react';
 import { UserData, Certificate, Department, Title, AppSettings } from '../App';
 import PrintIcon from '../components/icons/PrintIcon';
@@ -253,14 +250,14 @@ const Reporting: React.FC<ReportingProps> = ({ users, certificates, departments,
             (sortedReportData as DetailedReportRow[]).forEach(userRow => {
                 if (userRow.certificates.length > 0) {
                     const firstCert = userRow.certificates[0];
-                    rows.push([stt++, `"${userRow.name}"`, `"${firstCert.name}"`, `"${firstCert.credits}"`, `"${userRow.totalCredits}"`].join(','));
+                    rows.push([stt++, `"${userRow.name}"`, `"${firstCert.name}"`, `"${firstCert.credits}"`, `"${userRow.totalCredits}"`].join(';'));
                     for (let i = 1; i < userRow.certificates.length; i++) {
                         const cert = userRow.certificates[i];
-                        rows.push([ '', '', `"${cert.name}"`, `"${cert.credits}"`, '' ].join(','));
+                        rows.push([ '', '', `"${cert.name}"`, `"${cert.credits}"`, '' ].join(';'));
                     }
                 }
             });
-            csvContent = [headers.join(','), ...rows].join('\n');
+            csvContent = [headers.join(';'), ...rows].join('\n');
         } else if (reportType === 'department' || reportType === 'title_detail') {
             const isDeptReport = reportType === 'department';
             const groupHeaderLabel = isDeptReport ? 'Khoa/Phòng' : 'Chức danh';
@@ -291,26 +288,25 @@ const Reporting: React.FC<ReportingProps> = ({ users, certificates, departments,
                 const group = groupedData[groupId];
                 const groupName = groupMap.get(groupId) || 'Không xác định';
 
-                rows.push([`"${groupHeaderLabel}: ${groupName}"`, '', ''].join(','));
+                rows.push([`"${groupHeaderLabel}: ${groupName}"`, '', ''].join(';'));
 
                 group.rows.forEach((row, index) => {
-                    rows.push([`"${index + 1}"`, `"${row.name}"`, `"${row.totalCredits}"`].join(','));
+                    rows.push([`"${index + 1}"`, `"${row.name}"`, `"${row.totalCredits}"`].join(';'));
                 });
                 
-                rows.push(['"Tổng cộng"', '', `"${group.totalCredits}"`].join(','));
-// FIX: The `push` method for a `string[]` expects a string. `['','','']` is an array. Added `.join(',')` to convert it to a string.
-                rows.push(['','',''].join(',')); 
+                rows.push(['"Tổng cộng"', '', `"${group.totalCredits}"`].join(';'));
+                rows.push(['','',''].join(';')); 
             });
 
-            csvContent = [headers.join(','), ...rows].join('\n');
+            csvContent = [headers.join(';'), ...rows].join('\n');
         } else {
             const headers = ['STT', ...Object.values(reportHeaders)];
             const keys = Object.keys(reportHeaders);
             const rows = sortedReportData.map((row, index) => [
                 index + 1,
                 ...keys.map(key => `"${String(row[key as keyof ReportRow]).replace(/"/g, '""')}"`)
-            ].join(','));
-             csvContent = [headers.join(','), ...rows].join('\n');
+            ].join(';'));
+             csvContent = [headers.join(';'), ...rows].join('\n');
         }
         
         const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
