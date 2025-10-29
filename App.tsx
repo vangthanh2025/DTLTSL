@@ -1,5 +1,6 @@
 
 
+
 import React, { useState, useEffect } from 'react';
 import LoginForm from './components/LoginForm';
 import Dashboard from './pages/Dashboard';
@@ -12,7 +13,8 @@ export interface UserData {
   name: string;
   username: string;
   role: 'admin' | 'user' | 'reporter' | 'reporter_user';
-  status: boolean;
+  status: 'active' | 'disabled' | 'locked';
+  failedLoginAttempts?: number;
   departmentId?: string;
   position?: string;
   titleId?: string;

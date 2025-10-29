@@ -1,9 +1,5 @@
 
 
-
-
-
-
 import React, { useState, useMemo } from 'react';
 import { UserData, Certificate, AppSettings } from '../App';
 import UserGroupIcon from '../components/icons/UserGroupIcon';
@@ -131,7 +127,8 @@ const LineChart: React.FC<{ data: number[], year: string }> = ({ data, year }) =
 
 const PieChart: React.FC<{ data: { [key: string]: number } }> = ({ data }) => {
     const colors = ['#34d399', '#fbbf24', '#60a5fa', '#a78bfa', '#f87171', '#fb923c'];
-    // FIX: Explicitly type the accumulator and value in reduce to prevent type errors.
+    // FIX: Operator '+' cannot be applied to types 'unknown' and 'unknown'.
+    // Explicitly type accumulator and value in reduce function.
     const total = Object.values(data).reduce((sum: number, value: number) => sum + value, 0);
     if (total === 0) return <div className="h-72 flex items-center justify-center"><p className="text-center text-gray-500">Không có dữ liệu để hiển thị.</p></div>;
 
@@ -140,7 +137,8 @@ const PieChart: React.FC<{ data: { [key: string]: number } }> = ({ data }) => {
 
     const slices = sortedYears.map((year, index) => {
         const value = data[year];
-        // FIX: The error on this line is resolved by fixing the 'total' calculation above.
+        // FIX: The right-hand side of an arithmetic operation must be of type 'any', 'number', 'bigint' or an enum type.
+        // This is fixed by the change above ensuring 'total' is a number.
         const angle = (value / total) * 360;
         const endAngle = startAngle + angle;
 
@@ -194,7 +192,7 @@ const Statistics: React.FC<StatisticsProps> = ({ users, certificates, settings }
 
     const { filteredUsers, filteredCertificates } = useMemo(() => {
         const validRoles: UserData['role'][] = ['user', 'reporter_user'];
-        const filteredUsers = users.filter(user => validRoles.includes(user.role));
+        const filteredUsers = users.filter(user => validRoles.includes(user.role) && user.status !== 'disabled');
         const filteredUserIds = new Set(filteredUsers.map(u => u.id));
         const filteredCertificates = certificates.filter(cert => filteredUserIds.has(cert.userId));
         return { filteredUsers, filteredCertificates };
@@ -213,14 +211,13 @@ const Statistics: React.FC<StatisticsProps> = ({ users, certificates, settings }
         });
 
         const totalCerts = certsInCycle.length;
-        // FIX: Explicitly type the accumulator and certificate in reduce to prevent type errors.
-        const totalCreditsInCycle = certsInCycle.reduce((sum: number, cert: Certificate) => sum + (cert.credits || 0), 0);
+        const totalCreditsInCycle = certsInCycle.reduce((sum, cert) => sum + cert.credits, 0);
         const averageCredits = totalUsers > 0 ? (totalCreditsInCycle / totalUsers).toFixed(1) : '0.0';
 
         let compliantUsers = 0;
         const creditsPerUser = new Map<string, number>();
         certsInCycle.forEach(cert => {
-            creditsPerUser.set(cert.userId, (creditsPerUser.get(cert.userId) || 0) + (cert.credits || 0));
+            creditsPerUser.set(cert.userId, (creditsPerUser.get(cert.userId) || 0) + cert.credits);
         });
 
         filteredUsers.forEach(user => {
@@ -259,7 +256,9 @@ const Statistics: React.FC<StatisticsProps> = ({ users, certificates, settings }
         const data: { [key: string]: number } = {};
         filteredCertificates.forEach(cert => {
             const year = cert.date.toDate().getFullYear().toString();
-            data[year] = (data[year] || 0) + 1;
+            // FIX: The left-hand side of an arithmetic operation must be of type 'any', 'number', 'bigint' or an enum type.
+            // Using nullish coalescing operator for safer type inference.
+            data[year] = (data[year] ?? 0) + 1;
         });
         return data;
     }, [filteredCertificates]);

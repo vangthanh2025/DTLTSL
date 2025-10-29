@@ -28,6 +28,7 @@ const CertificateAddModal: React.FC<CertificateAddModalProps> = ({ user, onAdd, 
   const [isCameraOpen, setIsCameraOpen] = useState(false);
   const [newlyUploadedFileId, setNewlyUploadedFileId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isClosing, setIsClosing] = useState(false);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
@@ -74,12 +75,20 @@ const CertificateAddModal: React.FC<CertificateAddModalProps> = ({ user, onAdd, 
   };
   
   const handleClose = async () => {
-    if (isProcessing) return;
+    if (isProcessing || isClosing) return;
     if (newlyUploadedFileId) {
+      setIsClosing(true);
       console.log(`Cancelling... Deleting temporary file: ${newlyUploadedFileId}`);
-      await deleteFromDrive(newlyUploadedFileId);
+      try {
+        await deleteFromDrive(newlyUploadedFileId);
+      } catch (error) {
+        console.error("Failed to delete temporary file on close:", error);
+      } finally {
+        onClose();
+      }
+    } else {
+      onClose();
     }
-    onClose();
   };
 
   const processNewImage = async (imageBlob: Blob) => {
@@ -141,14 +150,37 @@ Hướng dẫn chi tiết: Trích xuất tiêu đề chính (name), ngày kết 
             config: { responseMimeType: "application/json", systemInstruction }
         });
 
-        const extractedData = JSON.parse(genAIResponse.text.trim());
+        const responseText = genAIResponse.text.trim();
+        if (!responseText || responseText.toLowerCase() === 'null') {
+            throw new Error("AI returned an empty or null response.");
+        }
+        
+        const extractedData = JSON.parse(responseText);
+        let dataExtracted = false;
+
         if (extractedData) {
-            setFormData(prev => ({
-                ...prev,
-                name: extractedData.name || prev.name,
-                credits: extractedData.credits?.toString() || prev.credits,
-                date: extractedData.date || prev.date,
-            }));
+            const updates: Partial<typeof formData> = {};
+
+            if (extractedData.name && typeof extractedData.name === 'string' && extractedData.name.toLowerCase() !== 'null') {
+                updates.name = extractedData.name;
+                dataExtracted = true;
+            }
+            if (extractedData.credits && typeof extractedData.credits === 'number') {
+                updates.credits = extractedData.credits.toString();
+                dataExtracted = true;
+            }
+            if (extractedData.date && typeof extractedData.date === 'string') {
+                updates.date = extractedData.date;
+                dataExtracted = true;
+            }
+            
+            if (Object.keys(updates).length > 0) {
+                setFormData(prev => ({ ...prev, ...updates }));
+            }
+            
+            if (!dataExtracted) {
+                throw new Error("AI could not extract any valid information.");
+            }
         }
     } catch (error) {
         console.error("Error processing image:", error);
@@ -175,82 +207,98 @@ Hướng dẫn chi tiết: Trích xuất tiêu đề chính (name), ngày kết 
     <>
     <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4">
       <div 
-        className="bg-white rounded-lg shadow-xl w-full max-w-3xl p-6 sm:p-8 relative max-h-[90vh] overflow-y-auto"
+        className="bg-white rounded-lg shadow-xl w-full max-w-4xl relative max-h-[90vh] flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
-        <button onClick={handleClose} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 z-10" aria-label="Đóng">
-          <CloseIcon className="h-6 w-6" />
-        </button>
-        <h2 className="text-2xl font-bold text-teal-800 mb-6">Thêm chứng chỉ mới</h2>
+        <header className="px-6 py-4 border-b border-slate-200 flex justify-between items-center flex-shrink-0">
+            <h2 className="text-2xl font-bold text-teal-800">Thêm chứng chỉ mới</h2>
+            <button onClick={handleClose} disabled={isClosing} className="text-gray-400 hover:text-gray-600 disabled:opacity-50 disabled:cursor-wait" aria-label="Đóng">
+                <CloseIcon className="h-6 w-6" />
+            </button>
+        </header>
         
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-            <div className="space-y-4">
-                <h3 className="text-base font-medium text-gray-700">Hình ảnh chứng chỉ</h3>
-                 <input type="file" ref={fileInputRef} onChange={handleFileChange} accept="image/*" className="hidden" />
-                <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
-                    <button type="button" onClick={() => fileInputRef.current?.click()} disabled={isProcessing} className="flex w-full sm:w-auto items-center justify-center gap-2 bg-white text-gray-700 font-semibold py-2 px-3 rounded-lg border border-gray-300 hover:bg-gray-100 transition-colors text-base disabled:opacity-50 disabled:cursor-wait">
-                        <UploadIcon className="h-5 w-5" />
-                        Chọn từ tệp
-                    </button>
-                    <button type="button" onClick={() => setIsCameraOpen(true)} disabled={isProcessing} className="flex w-full sm:w-auto items-center justify-center gap-2 bg-teal-50 text-teal-700 font-semibold py-2 px-3 rounded-lg hover:bg-teal-100 transition-colors text-base disabled:opacity-50 disabled:cursor-wait">
-                       <CameraIcon className="h-5 w-5" />
-                       Chụp ảnh
-                    </button>
+        <main className="p-6 flex-grow overflow-y-auto">
+            <div className="grid grid-cols-1 md:grid-cols-5 gap-8">
+                <div className="md:col-span-2 space-y-4">
+                    <h3 className="text-base font-medium text-gray-700">Hình ảnh chứng chỉ</h3>
+                    <input type="file" ref={fileInputRef} onChange={handleFileChange} accept="image/*" className="hidden" />
+                    
+                    <div 
+                        onClick={() => !isProcessing && fileInputRef.current?.click()}
+                        className={`relative w-full aspect-[4/3] bg-slate-50 rounded-lg border-2 border-dashed border-slate-300 flex items-center justify-center overflow-hidden text-center transition-colors ${!isProcessing ? 'cursor-pointer hover:bg-slate-100 hover:border-teal-400' : 'cursor-default'}`}
+                        role="button"
+                        aria-label="Tải ảnh lên"
+                    >
+                        {imagePreviewUrl ? (
+                            <img src={imagePreviewUrl} alt="Xem trước chứng chỉ" className="w-full h-full object-contain" />
+                        ) : (
+                            <div className="p-4">
+                                <UploadIcon className="h-10 w-10 text-slate-400 mx-auto" />
+                                <p className="text-slate-500 text-base mt-2">Kéo thả hoặc nhấn để tải ảnh lên</p>
+                            </div>
+                        )}
+                        {isProcessing && (
+                            <div className="absolute inset-0 bg-white/80 flex flex-col items-center justify-center gap-2">
+                                <div className="w-8 h-8 border-4 border-teal-500 border-t-transparent rounded-full animate-spin"></div>
+                                <p className="text-sm font-semibold text-teal-700">{processingMessage}</p>
+                            </div>
+                        )}
+                    </div>
+                    
+                    <div className="flex items-center gap-3">
+                        <button type="button" onClick={() => fileInputRef.current?.click()} disabled={isProcessing} className="flex-1 btn-secondary-outline justify-center gap-2">
+                            <UploadIcon className="h-5 w-5" />
+                            Chọn từ tệp
+                        </button>
+                        <button type="button" onClick={() => setIsCameraOpen(true)} disabled={isProcessing} className="flex-1 btn-secondary-outline justify-center gap-2">
+                           <CameraIcon className="h-5 w-5" />
+                           Chụp ảnh
+                        </button>
+                    </div>
                 </div>
-                <div className="relative w-full aspect-[4/3] bg-gray-100 rounded-md border flex items-center justify-center overflow-hidden mt-2">
-                    {imagePreviewUrl ? (
-                         <img src={imagePreviewUrl} alt="Xem trước chứng chỉ" className="w-full h-full object-contain" />
-                    ) : (
-                        <p className="text-base text-gray-500">Vui lòng chọn ảnh</p>
-                    )}
-                    {isProcessing && (
-                        <div className="absolute inset-0 bg-white/80 flex flex-col items-center justify-center gap-2">
-                            <div className="w-8 h-8 border-4 border-teal-500 border-t-transparent rounded-full animate-spin"></div>
-                            <p className="text-sm font-semibold text-teal-700">{processingMessage}</p>
-                        </div>
-                    )}
-                </div>
-            </div>
 
-            <form onSubmit={handleSubmit} className="space-y-4 flex flex-col">
-                <div className="flex-grow space-y-4">
-                    <div>
-                        <label htmlFor="name" className="block text-base font-medium text-gray-700">Tên chứng chỉ</label>
-                        <input id="name" name="name" type="text" value={formData.name} onChange={handleChange} className={`mt-1 w-full input-style ${errors.name ? 'border-red-500' : 'border-gray-300'}`} />
-                        {errors.name && <p className="text-sm text-red-500 mt-1">{errors.name}</p>}
-                    </div>
-                    <div className="grid grid-cols-2 gap-4">
+                <form onSubmit={handleSubmit} className="md:col-span-3 space-y-6 flex flex-col">
+                    <div className="flex-grow space-y-5">
                         <div>
-                        <label htmlFor="credits" className="block text-base font-medium text-gray-700">Số tiết</label>
-                        <input id="credits" name="credits" type="number" step="0.1" value={formData.credits} onChange={handleChange} className={`mt-1 w-full input-style ${errors.credits ? 'border-red-500' : 'border-gray-300'}`} />
-                        {errors.credits && <p className="text-sm text-red-500 mt-1">{errors.credits}</p>}
+                            <label htmlFor="name" className="block text-base font-medium text-gray-700">Tên chứng chỉ</label>
+                            <input id="name" name="name" type="text" value={formData.name} onChange={handleChange} className={`mt-1 w-full input-style ${errors.name ? 'border-red-500' : 'border-slate-300'}`} />
+                            {errors.name && <p className="text-sm text-red-500 mt-1">{errors.name}</p>}
+                        </div>
+                        <div className="grid grid-cols-2 gap-4">
+                            <div>
+                            <label htmlFor="credits" className="block text-base font-medium text-gray-700">Số tiết</label>
+                            <input id="credits" name="credits" type="number" step="0.1" value={formData.credits} onChange={handleChange} className={`mt-1 w-full input-style ${errors.credits ? 'border-red-500' : 'border-slate-300'}`} />
+                            {errors.credits && <p className="text-sm text-red-500 mt-1">{errors.credits}</p>}
+                            </div>
+                            <div>
+                            <label htmlFor="date" className="block text-base font-medium text-gray-700">Ngày cấp</label>
+                            <input id="date" name="date" type="date" value={formData.date} onChange={handleChange} className={`mt-1 w-full input-style ${errors.date ? 'border-red-500' : 'border-slate-300'}`} />
+                            {errors.date && <p className="text-sm text-red-500 mt-1">{errors.date}</p>}
+                            </div>
                         </div>
                         <div>
-                        <label htmlFor="date" className="block text-base font-medium text-gray-700">Ngày cấp</label>
-                        <input id="date" name="date" type="date" value={formData.date} onChange={handleChange} className={`mt-1 w-full input-style ${errors.date ? 'border-red-500' : 'border-gray-300'}`} />
-                        {errors.date && <p className="text-sm text-red-500 mt-1">{errors.date}</p>}
+                            <label htmlFor="imageUrl" className="block text-base font-medium text-gray-700">URL Ảnh</label>
+                            <input id="imageUrl" name="imageUrl" type="text" value={formData.imageUrl} readOnly placeholder="Sẽ tự động điền sau khi tải ảnh lên" className={`mt-1 w-full input-style bg-slate-100 cursor-not-allowed ${errors.imageUrl ? 'border-red-500' : 'border-slate-300'}`} />
+                            {errors.imageUrl && <p className="text-sm text-red-500 mt-1">{errors.imageUrl}</p>}
                         </div>
                     </div>
-                    <div>
-                        <label htmlFor="imageUrl" className="block text-base font-medium text-gray-700">URL Ảnh</label>
-                        <input id="imageUrl" name="imageUrl" type="text" value={formData.imageUrl} readOnly placeholder="Sẽ tự động điền sau khi tải ảnh lên" className={`mt-1 w-full input-style bg-gray-100 cursor-not-allowed ${errors.imageUrl ? 'border-red-500' : 'border-gray-300'}`} />
-                        {errors.imageUrl && <p className="text-sm text-red-500 mt-1">{errors.imageUrl}</p>}
-                    </div>
-                </div>
-                <div className="pt-6 flex justify-end space-x-3">
-                    <button type="button" onClick={handleClose} disabled={isProcessing} className="btn-secondary">Hủy</button>
-                    <button type="submit" disabled={isProcessing} className="btn-primary">Thêm chứng chỉ</button>
-                </div>
-            </form>
-        </div>
+                </form>
+            </div>
+        </main>
+        <footer className="px-6 py-4 border-t border-slate-200 flex justify-end space-x-3 flex-shrink-0">
+            <button type="button" onClick={handleClose} disabled={isProcessing || isClosing} className="btn-secondary">{isClosing ? 'Đang huỷ...' : 'Hủy'}</button>
+            <button type="submit" onClick={handleSubmit} disabled={isProcessing || isClosing} className="btn-primary">Thêm chứng chỉ</button>
+        </footer>
       </div>
       <style>{`
-        .input-style { box-sizing: border-box; width: 100%; margin-top: 0.25rem; padding: 0.5rem 0.75rem; border: 1px solid #D1D5DB; border-radius: 0.375rem; box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05); }
+        .input-style { box-sizing: border-box; width: 100%; margin-top: 0.25rem; padding: 0.75rem 1rem; border: 1px solid #D1D5DB; border-radius: 0.5rem; box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05); font-size: 1rem; }
         .input-style:focus { outline: 2px solid transparent; outline-offset: 2px; --tw-ring-color: #14B8A6; box-shadow: 0 0 0 2px var(--tw-ring-color); border-color: #14B8A6; }
-        .btn-primary { background-color: #0D9488; color: white; font-weight: 600; padding: 0.5rem 1rem; border-radius: 0.5rem; transition: background-color 0.2s; }
+        .btn-primary { background-color: #0D9488; color: white; font-weight: 600; padding: 0.625rem 1.25rem; border-radius: 0.5rem; transition: background-color 0.2s; border: none; }
         .btn-primary:hover { background-color: #0F766E; } .btn-primary:disabled { background-color: #5EEAD4; cursor: not-allowed; }
-        .btn-secondary { background-color: #E5E7EB; color: #374151; font-weight: 600; padding: 0.5rem 1rem; border-radius: 0.5rem; transition: background-color 0.2s; }
+        .btn-secondary { background-color: #E5E7EB; color: #374151; font-weight: 600; padding: 0.625rem 1.25rem; border-radius: 0.5rem; transition: background-color 0.2s; border: none; }
         .btn-secondary:hover { background-color: #D1D5DB; } .btn-secondary:disabled { background-color: #F3F4F6; cursor: not-allowed; }
+        .btn-secondary-outline { display: flex; align-items: center; background-color: #FFFFFF; color: #374151; font-weight: 600; padding: 0.5rem 1rem; border-radius: 0.5rem; transition: all 0.2s; border: 1px solid #D1D5DB; }
+        .btn-secondary-outline:hover { background-color: #F9FAFB; border-color: #6B7280; } .btn-secondary-outline:disabled { background-color: #F3F4F6; cursor: not-allowed; opacity: 0.7; }
       `}</style>
     </div>
     {isCameraOpen && <CameraModal onCapture={handlePhotoTaken} onClose={() => setIsCameraOpen(false)} />}

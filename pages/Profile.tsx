@@ -1,3 +1,6 @@
+
+
+
 // FIX: Import useState and useEffect from React to resolve reference errors.
 import React, { useState, useEffect } from 'react';
 import { UserData, Department, Title, AppSettings, Certificate } from '../App';
@@ -14,17 +17,31 @@ interface ProfileProps {
     settings: AppSettings | null;
 }
 
+// Helper component for displaying detailed information with better styling
 const InfoField: React.FC<{ label: string; value?: string | null }> = ({ label, value }) => (
     <div>
         <label className="text-base font-medium text-gray-500">{label}</label>
-        <p className="text-lg font-semibold text-gray-900 mt-1">{value || 'Chưa cập nhật'}</p>
+        {value ? (
+             <p className="text-lg font-semibold text-indigo-900 mt-1">{value}</p>
+        ) : (
+             <p className="text-lg text-gray-500 italic mt-1">Chưa cập nhật</p>
+        )}
     </div>
 );
 
 const formatDate = (dateObj: { toDate: () => Date } | undefined | Date) => {
-    if (!dateObj) return 'Chưa cập nhật';
+    if (!dateObj) return null;
     const date = dateObj instanceof Date ? dateObj : dateObj.toDate();
     return date.toLocaleDateString('vi-VN', { timeZone: 'UTC' });
+};
+
+const capitalizeName = (name: string): string => {
+  if (!name) return '';
+  return name
+    .toLowerCase()
+    .split(' ')
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
 };
 
 
@@ -32,40 +49,48 @@ const Profile: React.FC<ProfileProps> = ({ user, onUserUpdate, departments, titl
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
     const [userCredits, setUserCredits] = useState(0);
     const [loadingCredits, setLoadingCredits] = useState(true);
+    const [creditsError, setCreditsError] = useState<string | null>(null);
     
     const departmentName = departments.find(d => d.id === user.departmentId)?.name;
     const titleName = titles.find(t => t.id === user.titleId)?.name;
     const userInitials = user.name ? user.name.split(' ').map(n => n[0]).join('').toUpperCase() : '?';
 
     useEffect(() => {
-        if (!user?.id || !settings) {
-            if(!settings) setLoadingCredits(false);
+        if (!user?.id) {
+            setLoadingCredits(false);
             return;
         }
 
         const fetchUserCredits = async () => {
             setLoadingCredits(true);
+            setCreditsError(null);
             try {
                 const certsCollection = collection(db, 'Certificates');
                 const q = query(certsCollection, where('userId', '==', user.id));
                 const querySnapshot = await getDocs(q);
                 let totalCredits = 0;
                 querySnapshot.forEach(doc => {
-                    const cert = doc.data() as Omit<Certificate, 'id'>;
+                    const cert = doc.data();
                     const certYear = cert.date.toDate().getFullYear();
-                    if (certYear >= settings.complianceStartYear && certYear <= settings.complianceEndYear) {
-                        totalCredits += cert.credits || 0;
+                    if (settings && certYear >= settings.complianceStartYear && certYear <= settings.complianceEndYear) {
+                        totalCredits += cert.credits;
                     }
                 });
                 setUserCredits(totalCredits);
             } catch (error) {
                 console.error("Error fetching user credits:", error);
+                const message = error instanceof Error ? error.message : "Lỗi không xác định.";
+                setCreditsError(`Không thể tải dữ liệu tín chỉ. ${message}`);
             } finally {
                 setLoadingCredits(false);
             }
         };
 
-        fetchUserCredits();
+        if (settings) {
+            fetchUserCredits();
+        } else {
+            setLoadingCredits(false);
+        }
     }, [user.id, settings]);
 
     const handleSaveProfile = async (updatedData: Partial<UserData>) => {
@@ -101,46 +126,52 @@ const Profile: React.FC<ProfileProps> = ({ user, onUserUpdate, departments, titl
     return (
         <>
             <div className="space-y-8">
-                <h1 className="text-3xl font-bold text-gray-800">Thông tin Cá nhân</h1>
+                <h1 className="text-3xl font-bold text-indigo-900">Thông tin Cá nhân</h1>
 
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
                     {/* Main Info Card */}
-                    <div className="lg:col-span-2 bg-white p-6 md:p-8 rounded-2xl shadow-lg">
-                        <div className="flex flex-col sm:flex-row items-center sm:justify-between border-b border-gray-200 pb-6 mb-6 gap-4">
+                    <div className="lg:col-span-2 bg-white rounded-2xl shadow-lg overflow-hidden">
+                        <div className="flex flex-col sm:flex-row items-center sm:justify-between p-6 bg-gradient-to-r from-teal-600 to-sky-600 gap-4">
                             <div className="flex items-center gap-6">
-                                <div className="w-24 h-24 rounded-full bg-teal-500 text-white flex items-center justify-center text-4xl font-bold flex-shrink-0">
+                                <div className="w-24 h-24 rounded-full bg-teal-500 text-white flex items-center justify-center text-4xl font-bold flex-shrink-0 ring-4 ring-white shadow-md">
                                     {userInitials}
                                 </div>
                                 <div>
-                                    <h2 className="text-2xl font-bold text-gray-800">{user.name}</h2>
-                                    <p className="text-md text-gray-500">{titleName || 'Chưa có chức danh'}</p>
+                                    <h2 className="text-3xl font-bold text-white tracking-tight">{capitalizeName(user.name)}</h2>
+                                    <p className="text-lg font-medium text-teal-100 mt-1">{titleName || 'Chưa có chức danh'}</p>
                                 </div>
                             </div>
                             <button 
                                 onClick={() => setIsEditModalOpen(true)}
-                                className="bg-teal-50 text-teal-700 font-semibold py-2 px-4 rounded-lg flex items-center justify-center space-x-2 hover:bg-teal-100 transition-colors w-full sm:w-auto"
+                                className="bg-white/20 backdrop-blur-sm text-white font-semibold py-2 px-4 rounded-lg flex items-center justify-center space-x-2 hover:bg-white/30 transition-colors w-full sm:w-auto"
                             >
                                 <PencilIcon className="h-5 w-5" />
                                 <span>Chỉnh sửa</span>
                             </button>
                         </div>
                         
-                        <h3 className="text-lg font-semibold text-teal-700 mb-6">Thông tin chi tiết</h3>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-8">
-                            <InfoField label="Khoa/Phòng" value={departmentName} />
-                            <InfoField label="Chức vụ" value={user.position} />
-                            <InfoField label="Ngày sinh" value={formatDate(user.dateOfBirth)} /> 
-                            <InfoField label="Số CCHN" value={user.practiceCertificateNumber} />
-                            <InfoField label="Ngày cấp CCHN" value={formatDate(user.practiceCertificateIssueDate)} />
+                        <div className="p-6 md:p-8">
+                            <h3 className="text-xl font-semibold text-indigo-800 mb-6">Thông tin chi tiết</h3>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-8">
+                                <InfoField label="Khoa/Phòng" value={departmentName} />
+                                <InfoField label="Chức vụ" value={user.position} />
+                                <InfoField label="Ngày sinh" value={formatDate(user.dateOfBirth)} /> 
+                                <InfoField label="Số CCHN" value={user.practiceCertificateNumber} />
+                                <InfoField label="Ngày cấp CCHN" value={formatDate(user.practiceCertificateIssueDate)} />
+                            </div>
                         </div>
                     </div>
 
                     {/* Progress Card */}
                     <div className="lg:col-span-1 bg-white p-6 md:p-8 rounded-2xl shadow-lg flex flex-col items-center">
-                         <h3 className="text-lg font-semibold text-teal-700 mb-2">Tiến độ Chu kỳ Tuân thủ</h3>
+                         <h3 className="text-xl font-semibold text-indigo-800 mb-2">Tiến độ Chu kỳ Tuân thủ</h3>
                          {loadingCredits ? (
                             <div className="flex items-center justify-center h-48">
                                 <p className="text-gray-500">Đang tải dữ liệu...</p>
+                            </div>
+                         ) : creditsError ? (
+                            <div className="flex items-center justify-center h-48">
+                                <p className="text-red-500 text-center px-4">{creditsError}</p>
                             </div>
                          ) : settings ? (
                             <>
@@ -149,7 +180,7 @@ const Profile: React.FC<ProfileProps> = ({ user, onUserUpdate, departments, titl
                                     <svg className="w-full h-full transform -rotate-90">
                                         <circle className="text-gray-200" strokeWidth="12" stroke="currentColor" fill="transparent" r={radius} cx="96" cy="96" />
                                         <circle
-                                            className="text-teal-500"
+                                            className="text-indigo-500"
                                             strokeWidth="12"
                                             strokeDasharray={circumference}
                                             strokeDashoffset={progressOffset}
@@ -163,7 +194,7 @@ const Profile: React.FC<ProfileProps> = ({ user, onUserUpdate, departments, titl
                                         />
                                     </svg>
                                     <div className="absolute inset-0 flex flex-col items-center justify-center">
-                                         <span className="text-4xl font-bold text-teal-600">{userCredits}</span>
+                                         <span className="text-4xl font-bold text-indigo-600">{userCredits}</span>
                                          <span className="text-base text-gray-500">/{complianceTarget} tiết</span>
                                     </div>
                                 </div>
@@ -173,10 +204,10 @@ const Profile: React.FC<ProfileProps> = ({ user, onUserUpdate, departments, titl
                                 <div className="mt-auto pt-4 text-center">
                                     {creditsNeeded > 0 ? (
                                         <p className="text-base text-gray-600">
-                                            Bạn cần thêm <span className="font-bold text-orange-500">{creditsNeeded}</span> tiết để hoàn thành.
+                                            Bạn cần thêm <span className="font-bold text-rose-600">{creditsNeeded}</span> tiết để hoàn thành.
                                         </p>
                                     ) : (
-                                        <p className="font-semibold text-green-600">
+                                        <p className="font-semibold text-emerald-600">
                                             🎉 Chúc mừng! Bạn đã hoàn thành chu kỳ.
                                         </p>
                                     )}

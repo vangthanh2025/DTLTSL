@@ -1,3 +1,6 @@
+
+
+
 import React, { useState, useEffect } from 'react';
 import { db } from '../firebase';
 import { collection, getDocs, doc, updateDoc, deleteDoc } from 'firebase/firestore';
@@ -32,14 +35,27 @@ const Reports: React.FC<ReportsProps> = ({ user, settings, departments, titles, 
                 const certsPromise = getDocs(collection(db, 'Certificates'));
                 const [userSnapshot, certsSnapshot] = await Promise.all([usersPromise, certsPromise]);
                 
-                const userList = userSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as UserData));
-                const certsList = certsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Certificate));
+                const userList = userSnapshot.docs.map(doc => {
+                    const data = doc.data();
+                    if (typeof data.status === 'boolean') {
+                        data.status = data.status ? 'active' : 'disabled';
+                    } else if (!data.status) {
+                        data.status = 'active';
+                    }
+                    return { id: doc.id, ...data } as UserData;
+                });
+                
+                const certsList = certsSnapshot.docs.map(doc => {
+                    const data = doc.data();
+                    return { id: doc.id, ...data } as Certificate;
+                });
                 
                 setUsers(userList);
                 setCertificates(certsList);
             } catch (err) {
                 console.error("Error fetching report data:", err);
-                setError("Không thể tải dữ liệu báo cáo.");
+                const errorMessage = err instanceof Error ? err.message : "Lỗi không xác định.";
+                setError(`Không thể tải dữ liệu báo cáo. ${errorMessage}`);
             } finally {
                 setLoading(false);
             }

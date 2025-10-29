@@ -1,9 +1,5 @@
 
 
-
-
-
-
 import React, { useState, useMemo } from 'react';
 import { UserData, Certificate, Department, Title } from '../App';
 import PencilIcon from '../components/icons/PencilIcon';
@@ -75,9 +71,10 @@ const Inspection: React.FC<InspectionProps> = ({ currentUser, allUsers, allCerti
                 user: userMap.get(certificate.userId),
                 certificate
             }))
-            .filter((item): item is { user: UserData; certificate: Certificate } => !!item.user)
-            // FIX: Explicitly type sort arguments to resolve 'localeCompare' on 'unknown' type error.
-            .sort((a: { user: UserData }, b: { user: UserData }) => a.user.name.localeCompare(b.user.name, 'vi'));
+            .filter((item): item is { user: UserData; certificate: Certificate } => !!item.user && item.user.status !== 'disabled')
+            // FIX: Property 'localeCompare' does not exist on type 'unknown'.
+            // Coerce user name to string to ensure localeCompare is available.
+            .sort((a, b) => String(a.user.name).localeCompare(String(b.user.name), 'vi'));
     }, [selectedCertificateName, allCertificates, allUsers, activeMode]);
     
     // --- Personnel Search Logic ---
@@ -85,7 +82,7 @@ const Inspection: React.FC<InspectionProps> = ({ currentUser, allUsers, allCerti
         if (!personnelSearchTerm || activeMode !== 'personnel') return [];
         const normalizedSearch = normalizeText(personnelSearchTerm);
         return allUsers
-            .filter(user => user.role !== 'admin' && user.role !== 'reporter' && normalizeText(user.name).includes(normalizedSearch))
+            .filter(user => user.status !== 'disabled' && user.role !== 'admin' && user.role !== 'reporter' && normalizeText(user.name).includes(normalizedSearch))
             .slice(0, 10);
     }, [personnelSearchTerm, allUsers, activeMode]);
 

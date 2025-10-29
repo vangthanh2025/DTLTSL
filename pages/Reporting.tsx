@@ -1,4 +1,5 @@
 
+
 import React, { useState, useMemo, ReactNode } from 'react';
 import { UserData, Certificate, Department, Title, AppSettings } from '../App';
 import PrintIcon from '../components/icons/PrintIcon';
@@ -84,7 +85,7 @@ const Reporting: React.FC<ReportingProps> = ({ users, certificates, departments,
 
         setTimeout(() => { // Simulate processing delay
             const validRoles: UserData['role'][] = ['user', 'reporter_user'];
-            const relevantUsers = users.filter(user => validRoles.includes(user.role));
+            const relevantUsers = users.filter(user => validRoles.includes(user.role) && user.status !== 'disabled');
             
             const filteredCertsByTime = certificates.filter(cert => {
                 const certDate = cert.date.toDate();
@@ -120,8 +121,9 @@ const Reporting: React.FC<ReportingProps> = ({ users, certificates, departments,
                     certificates.forEach(cert => {
                         const certYear = cert.date.toDate().getFullYear();
                         if (certYear >= settings.complianceStartYear && certYear <= settings.complianceEndYear) {
-                            // FIX: Explicitly cast cert.credits to a number to prevent type errors during arithmetic operation.
-                            userCreditsMap.set(cert.userId, (userCreditsMap.get(cert.userId) || 0) + (Number(cert.credits) || 0));
+                            // FIX: The left-hand side of an arithmetic operation must be of type 'any', 'number', 'bigint' or an enum type.
+                            // Use nullish coalescing operator for safer type inference.
+                            userCreditsMap.set(cert.userId, (userCreditsMap.get(cert.userId) ?? 0) + cert.credits);
                         }
                     });
 
@@ -148,7 +150,9 @@ const Reporting: React.FC<ReportingProps> = ({ users, certificates, departments,
                 case 'title_detail': {
                     const userCreditsMap = new Map<string, number>();
                     filteredCertsByTime.forEach(cert => {
-                        userCreditsMap.set(cert.userId, (userCreditsMap.get(cert.userId) || 0) + (Number(cert.credits) || 0));
+                        // FIX: The left-hand side of an arithmetic operation must be of type 'any', 'number', 'bigint' or an enum type.
+                        // Use nullish coalescing operator for safer type inference.
+                        userCreditsMap.set(cert.userId, (userCreditsMap.get(cert.userId) ?? 0) + cert.credits);
                     });
 
                     if (reportType === 'summary') {
@@ -164,8 +168,9 @@ const Reporting: React.FC<ReportingProps> = ({ users, certificates, departments,
                         filteredCertsByTime.forEach(cert => {
                             if (!userCertMap.has(cert.userId)) userCertMap.set(cert.userId, { certificates: [], totalCredits: 0 });
                             const entry = userCertMap.get(cert.userId)!;
-                            entry.certificates.push({ name: cert.name, credits: cert.credits || 0 });
-                            entry.totalCredits += (cert.credits || 0);
+                            const credits = cert.credits;
+                            entry.certificates.push({ name: cert.name, credits: credits });
+                            entry.totalCredits += credits;
                         });
                         const reportResult: DetailedReportRow[] = Array.from(userCertMap.entries()).map(([userId, data]) => ({
                             id: userId, name: userMap.get(userId)?.name || 'Không rõ', ...data

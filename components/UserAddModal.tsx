@@ -1,4 +1,5 @@
 
+
 import React, { useState } from 'react';
 import { UserData, Department, Title } from '../App';
 import CloseIcon from './icons/CloseIcon';
@@ -44,7 +45,9 @@ const UserAddModal: React.FC<UserAddModalProps> = ({ departments, titles, onAdd,
     // correct union type, resolving a downstream type error in the parent component.
     onAdd({
       ...formData,
+      status: formData.status ? 'active' : 'disabled',
       role: formData.role as UserData['role'],
+      failedLoginAttempts: 0,
     });
   };
 

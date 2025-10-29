@@ -25,6 +25,18 @@ const roleNames: { [key: string]: string } = {
     reporter_user: 'Nhân viên & Báo cáo',
 };
 
+const statusNames: { [key: string]: string } = {
+    active: 'Hoạt động',
+    disabled: 'Vô hiệu hóa',
+    locked: 'Bị khóa',
+};
+
+const statusColors: { [key: string]: string } = {
+    active: 'bg-green-100 text-green-800',
+    disabled: 'bg-red-100 text-red-800',
+    locked: 'bg-yellow-100 text-yellow-800',
+};
+
 const Administration: React.FC<AdministrationProps> = ({ departments, titles, onKeysUpdate, onDepartmentsUpdate, onTitlesUpdate }) => {
     const [users, setUsers] = useState<UserData[]>([]);
     const [loading, setLoading] = useState(true);
@@ -75,7 +87,16 @@ const Administration: React.FC<AdministrationProps> = ({ departments, titles, on
                     getDocs(collection(db, 'KeyGemini'))
                 ]);
                 
-                const userList = userSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as UserData));
+                const userList = userSnapshot.docs.map(doc => {
+                    const data = doc.data();
+                    // Transform legacy boolean status
+                    if (typeof data.status === 'boolean') {
+                        data.status = data.status ? 'active' : 'disabled';
+                    } else if (!data.status) {
+                        data.status = 'active'; // Default for old accounts
+                    }
+                    return { id: doc.id, ...data } as UserData;
+                });
                 setUsers(userList);
 
                 if (!settingsSnapshot.empty) {
@@ -141,6 +162,19 @@ const Administration: React.FC<AdministrationProps> = ({ departments, titles, on
             setUsers(prev => prev.filter(u => u.id !== deletingUser.id));
             setDeletingUser(null);
         } catch (err) { console.error("Error deleting user: ", err); }
+    };
+
+    const handleUnlockUser = async (userToUnlock: UserData) => {
+        try {
+            const userDocRef = doc(db, 'Users', userToUnlock.id);
+            await updateDoc(userDocRef, {
+                status: 'active',
+                failedLoginAttempts: 0
+            });
+            setUsers(prev => prev.map(u => u.id === userToUnlock.id ? { ...u, status: 'active', failedLoginAttempts: 0 } : u));
+        } catch (err) {
+            console.error("Error unlocking user: ", err);
+        }
     };
 
     const handleSaveSettings = async (e: React.FormEvent) => {
@@ -274,10 +308,19 @@ const Administration: React.FC<AdministrationProps> = ({ departments, titles, on
                         <td className="px-6 py-4 whitespace-nowrap text-base text-gray-500">{departmentMap.get(user.departmentId) || 'Chưa cập nhật'}</td>
                         <td className="px-6 py-4 whitespace-nowrap text-base text-gray-500">{titleMap.get(user.titleId) || 'Chưa cập nhật'}</td>
                         <td className="px-6 py-4 whitespace-nowrap text-base text-gray-500">{roleNames[user.role] || user.role}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-base"><span className={`px-2 inline-flex text-sm leading-5 font-semibold rounded-full ${user.status ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>{user.status ? 'Hoạt động' : 'Vô hiệu hóa'}</span></td>
+                        <td className="px-6 py-4 whitespace-nowrap text-base"><span className={`px-2 inline-flex text-sm leading-5 font-semibold rounded-full ${statusColors[user.status] || 'bg-gray-100 text-gray-800'}`}>{statusNames[user.status] || user.status}</span></td>
                         <td className="px-6 py-4 whitespace-nowrap text-base font-medium">
-                            <button onClick={() => setEditingUser(user)} className="text-teal-600 hover:text-teal-900 mr-4"><PencilIcon className="h-5 w-5" /></button>
-                            <button onClick={() => setDeletingUser(user)} className="text-red-600 hover:text-red-900"><TrashIcon className="h-5 w-5" /></button>
+                            {user.status === 'locked' && (
+                                <button
+                                    onClick={() => handleUnlockUser(user)}
+                                    className="text-blue-600 hover:text-blue-900 mr-4 font-semibold"
+                                    title="Mở khóa tài khoản"
+                                >
+                                    Mở khóa
+                                </button>
+                            )}
+                            <button onClick={() => setEditingUser(user)} className="text-teal-600 hover:text-teal-900 mr-4" title="Chỉnh sửa"><PencilIcon className="h-5 w-5" /></button>
+                            <button onClick={() => setDeletingUser(user)} className="text-red-600 hover:text-red-900" title="Xóa"><TrashIcon className="h-5 w-5" /></button>
                         </td>
                     </tr>))}</tbody>
                 </table>

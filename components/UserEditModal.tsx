@@ -1,4 +1,5 @@
 
+
 import React, { useState, useEffect } from 'react';
 import { UserData, Department, Title } from '../App';
 import CloseIcon from './icons/CloseIcon';
@@ -22,8 +23,8 @@ const formatDateToYyyyMmDd = (date: Date): string => {
 const UserEditModal: React.FC<UserEditModalProps> = ({ user, departments, titles, onSave, onClose }) => {
   const [formData, setFormData] = useState({
     name: '',
-    role: 'user',
-    status: true,
+    role: 'user' as UserData['role'],
+    status: 'active' as UserData['status'],
     departmentId: '',
     titleId: '',
     position: '',
@@ -36,7 +37,7 @@ const UserEditModal: React.FC<UserEditModalProps> = ({ user, departments, titles
     setFormData({
       name: user.name || '',
       role: user.role || 'user',
-      status: user.status === undefined ? true : user.status,
+      status: user.status || 'active',
       departmentId: user.departmentId || '',
       titleId: user.titleId || '',
       position: user.position || '',
@@ -49,12 +50,17 @@ const UserEditModal: React.FC<UserEditModalProps> = ({ user, departments, titles
   }, [user]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-    const { name, value, type } = e.target;
-    if (type === 'checkbox') {
-        const { checked } = e.target as HTMLInputElement;
-        setFormData(prev => ({ ...prev, [name]: checked }));
+    const { name, value } = e.target;
+    setFormData(prev => ({ ...prev, [name]: value }));
+  };
+
+  const handleStatusChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { checked } = e.target;
+    if (user.status === 'locked') {
+        // From locked, you can only disable. Re-checking keeps it locked.
+        setFormData(prev => ({ ...prev, status: checked ? 'locked' : 'disabled' }));
     } else {
-        setFormData(prev => ({ ...prev, [name]: value }));
+        setFormData(prev => ({ ...prev, status: checked ? 'active' : 'disabled' }));
     }
   };
 
@@ -63,13 +69,18 @@ const UserEditModal: React.FC<UserEditModalProps> = ({ user, departments, titles
     
     const dataToSave: Partial<UserData> = {
         name: formData.name,
-        role: formData.role as UserData['role'],
+        role: formData.role,
         status: formData.status,
         departmentId: formData.departmentId,
         titleId: formData.titleId,
         position: formData.position,
         practiceCertificateNumber: formData.practiceCertificateNumber,
     };
+    
+    // If status was locked and remains locked, we don't need to send the update for status.
+    if (user.status === 'locked' && formData.status === 'locked') {
+        delete dataToSave.status;
+    }
 
     // Parsing a 'YYYY-MM-DD' string with new Date() creates a UTC date.
     // This prevents the date from shifting due to the user's local timezone.
@@ -82,6 +93,12 @@ const UserEditModal: React.FC<UserEditModalProps> = ({ user, departments, titles
     }
 
     onSave(dataToSave);
+  };
+  
+  const getStatusText = () => {
+    if (formData.status === 'locked') return 'Bị khóa';
+    if (formData.status === 'active') return 'Hoạt động';
+    return 'Vô hiệu hóa';
   };
 
 
@@ -147,9 +164,9 @@ const UserEditModal: React.FC<UserEditModalProps> = ({ user, departments, titles
                  <div className="flex items-center gap-4 md:col-span-3">
                     <label htmlFor="status" className="block text-base font-medium text-gray-700">Trạng thái</label>
                     <label className="relative inline-flex items-center cursor-pointer">
-                        <input type="checkbox" name="status" id="status" checked={formData.status} onChange={handleChange} className="sr-only peer" />
+                        <input type="checkbox" name="status" id="status" checked={formData.status !== 'disabled'} onChange={handleStatusChange} className="sr-only peer" />
                         <div className="w-11 h-6 bg-gray-200 rounded-full peer peer-focus:ring-4 peer-focus:ring-teal-300 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-teal-600"></div>
-                        <span className="ml-3 text-base font-medium text-gray-900">{formData.status ? 'Hoạt động' : 'Vô hiệu hóa'}</span>
+                        <span className="ml-3 text-base font-medium text-gray-900">{getStatusText()}</span>
                     </label>
                 </div>
             </div>

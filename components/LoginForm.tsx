@@ -3,7 +3,7 @@ import LogoIcon from './icons/LogoIcon';
 import EyeIcon from './icons/EyeIcon';
 import EyeOffIcon from './icons/EyeOffIcon';
 import { db } from '../firebase';
-import { collection, query, where, getDocs } from 'firebase/firestore';
+import { collection, query, where, getDocs, doc, updateDoc } from 'firebase/firestore';
 import { UserData } from '../App';
 
 interface LoginFormProps {
@@ -37,17 +37,52 @@ const LoginForm: React.FC<LoginFormProps> = ({ onLoginSuccess }) => {
         return;
       }
 
-      // Assuming username is unique, so we take the first result
       const userDoc = querySnapshot.docs[0];
-      const userData = userDoc.data();
+      const userDocRef = doc(db, 'Users', userDoc.id);
+      let userData = userDoc.data() as Partial<UserData>;
+
+      // Handle legacy boolean status
+      if (typeof userData.status === 'boolean') {
+          userData.status = userData.status ? 'active' : 'disabled';
+      } else if (!userData.status) {
+          userData.status = 'active';
+      }
+
+      if (userData.status === 'locked') {
+        setError('Tài khoản của bạn đã bị khóa. Vui lòng liên hệ quản trị viên.');
+        setLoading(false);
+        return;
+      }
+      
+      if (userData.status === 'disabled') {
+        setError('Tài khoản của bạn đã bị vô hiệu hóa. Vui lòng liên hệ quản trị viên.');
+        setLoading(false);
+        return;
+      }
 
       if (userData.password === password) {
-        // IMPORTANT: Storing passwords in plaintext is a major security risk.
-        // This is for demonstration purposes based on the provided DB structure.
-        // In a real application, passwords should be hashed.
+        if (userData.failedLoginAttempts && userData.failedLoginAttempts > 0) {
+          await updateDoc(userDocRef, { failedLoginAttempts: 0 });
+          userData.failedLoginAttempts = 0; // Update local data as well
+        }
         onLoginSuccess({ id: userDoc.id, ...userData } as UserData);
       } else {
-        setError('Tên đăng nhập hoặc mật khẩu không chính xác.');
+        const currentAttempts = userData.failedLoginAttempts || 0;
+        const newAttempts = currentAttempts + 1;
+        
+        if (newAttempts >= 5) {
+            await updateDoc(userDocRef, {
+                failedLoginAttempts: newAttempts,
+                status: 'locked'
+            });
+            setError('Tài khoản của bạn đã bị khóa do nhập sai mật khẩu quá nhiều lần. Vui lòng liên hệ quản trị viên.');
+        } else {
+            await updateDoc(userDocRef, {
+                failedLoginAttempts: newAttempts
+            });
+            const attemptsLeft = 5 - newAttempts;
+            setError(`Tên đăng nhập hoặc mật khẩu không chính xác. Bạn còn ${attemptsLeft} lần thử.`);
+        }
       }
     } catch (err) {
       console.error('Login Error:', err);
