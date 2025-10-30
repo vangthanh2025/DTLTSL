@@ -1,11 +1,13 @@
 
 
 
+
 import React, { useState, useEffect } from 'react';
 import LoginForm from './components/LoginForm';
 import Dashboard from './pages/Dashboard';
 import { db } from './firebase';
 import { collection, getDocs } from 'firebase/firestore';
+import SharedReportView from './pages/SharedReportView';
 
 // Define a type for the user data from Firestore
 export interface UserData {
@@ -57,6 +59,13 @@ export interface GeminiKey {
 
 
 const App: React.FC = () => {
+  const urlParams = new URLSearchParams(window.location.search);
+  const shareId = urlParams.get('id');
+
+  if (shareId) {
+    return <SharedReportView shareId={shareId} />;
+  }
+  
   const [currentUser, setCurrentUser] = useState<UserData | null>(null);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [titles, setTitles] = useState<Title[]>([]);

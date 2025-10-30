@@ -413,7 +413,7 @@ const Administration: React.FC<AdministrationProps> = ({ departments, titles, on
         <div>
             <h1 className="text-2xl font-bold text-teal-800 mb-4">Quản trị hệ thống</h1>
             <div className="border-b border-gray-200">
-                <nav className="-mb-px flex space-x-8" aria-label="Tabs">
+                <nav className="-mb-px flex flex-wrap gap-x-8 gap-y-2" aria-label="Tabs">
                     <button onClick={() => setActiveTab('userManagement')} className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-base ${activeTab === 'userManagement' ? 'border-teal-500 text-teal-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}>Tài khoản</button>
                     <button onClick={() => setActiveTab('categoryManagement')} className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-base ${activeTab === 'categoryManagement' ? 'border-teal-500 text-teal-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}>Danh mục</button>
                     <button onClick={() => setActiveTab('geminiKeyManagement')} className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-base ${activeTab === 'geminiKeyManagement' ? 'border-teal-500 text-teal-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}>Quản lý API</button>

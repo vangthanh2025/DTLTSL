@@ -273,7 +273,7 @@ const Reporting: React.FC<ReportingProps> = ({ user, users, certificates, depart
 
         try {
             const docRef = await addDoc(collection(db, 'SharedReports'), sharePayload);
-            const shareUrl = `${window.location.origin}/share.html?id=${docRef.id}`;
+            const shareUrl = `${window.location.origin}/?id=${docRef.id}`;
             setShareModalInfo({ url: shareUrl, expiresAt });
         } catch (error) {
             console.error("Error creating share link:", error);
