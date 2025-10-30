@@ -4,6 +4,7 @@ import PrintIcon from '../components/icons/PrintIcon';
 import ExportIcon from '../components/icons/ExportIcon';
 import ShareIcon from '../components/icons/ShareIcon';
 import ShareReportModal from '../components/ShareReportModal';
+import CertificateDetailModal from '../components/CertificateDetailModal';
 import { db } from '../firebase';
 import { addDoc, collection, Timestamp } from 'firebase/firestore';
 
@@ -34,8 +35,15 @@ interface DetailedReportRow {
     totalCredits: number;
 }
 
+interface SummaryWithDetailsRow {
+    id: string;
+    name: string;
+    totalCredits: number;
+    certificates: { name: string, credits: number }[];
+}
 
-type ReportRow = ComplianceReportRow | SummaryReportRow | DetailedReportRow;
+
+type ReportRow = ComplianceReportRow | SummaryReportRow | DetailedReportRow | SummaryWithDetailsRow;
 type SortableKeys = keyof ReportRow;
 
 interface ReportingProps {
@@ -61,6 +69,7 @@ const Reporting: React.FC<ReportingProps> = ({ user, users, certificates, depart
     const [reportHeaders, setReportHeaders] = useState<Record<string, string>>({});
     const [sortConfig, setSortConfig] = useState<{ key: SortableKeys; direction: 'ascending' | 'descending' } | null>(null);
     const [shareModalInfo, setShareModalInfo] = useState<{ url: string; expiresAt: Date; token: string; } | null>(null);
+    const [detailModalUser, setDetailModalUser] = useState<SummaryWithDetailsRow | null>(null);
 
 
     const titleMap = useMemo(() => new Map(titles.map(t => [t.id, t.name])), [titles]);
@@ -76,6 +85,7 @@ const Reporting: React.FC<ReportingProps> = ({ user, users, certificates, depart
     const reportOptions = [
         { value: '', label: 'Chọn loại báo cáo...' },
         { value: 'compliance', label: 'Báo cáo tuân thủ theo chu kỳ' },
+        { value: 'summary_with_details', label: 'Báo cáo Tổng hợp có Chi tiết' },
         { value: 'summary', label: 'Báo cáo tổng hợp toàn bộ' },
         { value: 'detail', label: 'Báo cáo chi tiết chứng chỉ' },
         { value: 'department', label: 'Báo cáo tổng hợp theo Khoa/Phòng' },
@@ -126,7 +136,7 @@ const Reporting: React.FC<ReportingProps> = ({ user, users, certificates, depart
                     certificates.forEach(cert => {
                         const certYear = cert.date.toDate().getFullYear();
                         if (settings && certYear >= settings.complianceStartYear && certYear <= settings.complianceEndYear) {
-                            // FIX: Explicitly cast values to Number to avoid arithmetic errors with mixed types.
+                            // FIX: The left-hand side and right-hand side of an arithmetic operation must be of type 'any', 'number', 'bigint' or an enum type.
                             userCreditsMap.set(cert.userId, Number(userCreditsMap.get(cert.userId) ?? 0) + Number(cert.credits));
                         }
                     });
@@ -147,6 +157,35 @@ const Reporting: React.FC<ReportingProps> = ({ user, users, certificates, depart
                     setReportData(reportResult);
                     break;
                 }
+                
+                case 'summary_with_details': {
+                    setReportHeaders({
+                        name: 'Họ và tên',
+                        totalCredits: 'Tổng số tiết',
+                        actions: 'Hành động',
+                    });
+                    const userCertMap = new Map<string, { certificates: { name: string; credits: number }[], totalCredits: number }>();
+                    filteredCertsByTime.forEach(cert => {
+                        if (!userCertMap.has(cert.userId)) {
+                            userCertMap.set(cert.userId, { certificates: [], totalCredits: 0 });
+                        }
+                        const entry = userCertMap.get(cert.userId)!;
+                        entry.certificates.push({ name: cert.name, credits: cert.credits });
+                        entry.totalCredits += Number(cert.credits);
+                    });
+
+                    const reportResult: SummaryWithDetailsRow[] = relevantUsers.map(user => {
+                        const userData = userCertMap.get(user.id) || { certificates: [], totalCredits: 0 };
+                        return {
+                            id: user.id,
+                            name: user.name,
+                            totalCredits: userData.totalCredits,
+                            certificates: userData.certificates.sort((a,b) => a.name.localeCompare(b.name, 'vi')),
+                        };
+                    });
+                    setReportData(reportResult);
+                    break;
+                }
 
                 case 'summary':
                 case 'detail':
@@ -154,7 +193,6 @@ const Reporting: React.FC<ReportingProps> = ({ user, users, certificates, depart
                 case 'title_detail': {
                     const userCreditsMap = new Map<string, number>();
                     filteredCertsByTime.forEach(cert => {
-                        // FIX: Explicitly cast values to Number to avoid arithmetic errors with mixed types.
                         userCreditsMap.set(cert.userId, Number(userCreditsMap.get(cert.userId) ?? 0) + Number(cert.credits));
                     });
 
@@ -172,7 +210,7 @@ const Reporting: React.FC<ReportingProps> = ({ user, users, certificates, depart
                             if (!userCertMap.has(cert.userId)) userCertMap.set(cert.userId, { certificates: [], totalCredits: 0 });
                             const entry = userCertMap.get(cert.userId)!;
                             entry.certificates.push({ name: cert.name, credits: cert.credits });
-                            entry.totalCredits = entry.totalCredits + cert.credits;
+                            entry.totalCredits = entry.totalCredits + Number(cert.credits);
                         });
                         const reportResult: DetailedReportRow[] = Array.from(userCertMap.entries()).map(([userId, data]) => ({
                             id: userId, name: userMap.get(userId)?.name || 'Không rõ', ...data
@@ -220,6 +258,7 @@ const Reporting: React.FC<ReportingProps> = ({ user, users, certificates, depart
                 const aValue = a[sortConfig.key as keyof typeof a];
                 const bValue = b[sortConfig.key as keyof typeof b];
                 if (typeof aValue === 'string' && typeof bValue === 'string') {
+                    if (sortConfig.key === 'actions') return 0; // Don't sort by action column
                     return sortConfig.direction === 'ascending' ? aValue.localeCompare(bValue, 'vi') : bValue.localeCompare(aValue, 'vi');
                 }
                 if (typeof aValue === 'number' && typeof bValue === 'number') {
@@ -240,7 +279,7 @@ const Reporting: React.FC<ReportingProps> = ({ user, users, certificates, depart
     };
 
     const getSortIndicator = (key: string) => {
-        if (!sortConfig || sortConfig.key !== key || ['department', 'title_detail', 'detail'].includes(reportType)) return ' ↕';
+        if (!sortConfig || sortConfig.key !== key || ['department', 'title_detail', 'detail', 'actions'].includes(key) || ['summary_with_details', 'department', 'title_detail', 'detail'].includes(reportType)) return '';
         return sortConfig.direction === 'ascending' ? ' ▲' : ' ▼';
     };
     
@@ -255,6 +294,7 @@ const Reporting: React.FC<ReportingProps> = ({ user, users, certificates, depart
             detail: 'Báo cáo Chi tiết Chứng chỉ',
             department: 'Báo cáo Tổng hợp theo Khoa/Phòng',
             title_detail: 'Báo cáo Tổng hợp theo Chức danh',
+            summary_with_details: 'Báo cáo Tổng hợp có Chi tiết',
         };
 
         const reportTitle = reportTitleOptions[reportType] || 'Báo cáo Tùy chỉnh';
@@ -288,11 +328,11 @@ const Reporting: React.FC<ReportingProps> = ({ user, users, certificates, depart
         if (!sortedReportData) return;
         let csvContent: string;
 
-        if (reportType === 'detail') {
+        if (reportType === 'detail' || reportType === 'summary_with_details') {
             const headers = ['STT', 'Họ tên', 'Tên chứng chỉ', 'Số tiết', 'Tổng tiết'];
             const rows: string[] = [];
             let stt = 1;
-            (sortedReportData as DetailedReportRow[]).forEach(userRow => {
+            (sortedReportData as (DetailedReportRow | SummaryWithDetailsRow)[]).forEach(userRow => {
                 if (userRow.certificates.length > 0) {
                     const firstCert = userRow.certificates[0];
                     rows.push([stt++, `"${userRow.name}"`, `"${firstCert.name}"`, `"${firstCert.credits}"`, `"${userRow.totalCredits}"`].join(';'));
@@ -366,6 +406,17 @@ const Reporting: React.FC<ReportingProps> = ({ user, users, certificates, depart
     };
     
     const renderCellContent = (row: ReportRow, key: string): ReactNode => {
+        if (key === 'actions' && reportType === 'summary_with_details') {
+            return (
+                <button
+                    onClick={() => setDetailModalUser(row as SummaryWithDetailsRow)}
+                    className="text-teal-600 font-semibold hover:underline"
+                >
+                    Xem
+                </button>
+            );
+        }
+        
         const value = row[key as keyof ReportRow];
 
         if (key === 'status' && 'status' in row) {
@@ -399,7 +450,7 @@ const Reporting: React.FC<ReportingProps> = ({ user, users, certificates, depart
     );
 
     const renderFilters = () => {
-        if (reportType === 'summary' || reportType === 'detail') return renderTimeFilters();
+        if (['summary', 'detail', 'summary_with_details'].includes(reportType)) return renderTimeFilters();
         if (reportType === 'department') return (
             <>
             <div className="mt-4">
@@ -609,6 +660,13 @@ const Reporting: React.FC<ReportingProps> = ({ user, users, certificates, depart
                     expiresAt={shareModalInfo.expiresAt}
                     token={shareModalInfo.token}
                     onClose={() => setShareModalInfo(null)}
+                />
+            )}
+            
+            {detailModalUser && (
+                <CertificateDetailModal
+                    user={detailModalUser}
+                    onClose={() => setDetailModalUser(null)}
                 />
             )}
 

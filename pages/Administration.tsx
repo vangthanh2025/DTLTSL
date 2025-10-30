@@ -11,6 +11,8 @@ import ConfirmDeleteModal from '../components/ConfirmDeleteModal';
 import { GoogleGenAI } from '@google/genai';
 import QRIcon from '../components/icons/QRIcon';
 import UpdateExpirationModal from '../components/UpdateExpirationModal';
+import EyeIcon from '../components/icons/EyeIcon';
+import ShareReportModal from '../components/ShareReportModal';
 
 interface AdministrationProps {
     departments: Department[];
@@ -88,6 +90,7 @@ const Administration: React.FC<AdministrationProps> = ({ departments, titles, on
     const [sharedReports, setSharedReports] = useState<SharedReport[]>([]);
     const [editingExpirationReport, setEditingExpirationReport] = useState<SharedReport | null>(null);
     const [deletingSharedReport, setDeletingSharedReport] = useState<SharedReport | null>(null);
+    const [viewingQRReport, setViewingQRReport] = useState<SharedReport | null>(null);
 
 
     const departmentMap = new Map(departments.map(dept => [dept.id, dept.name]));
@@ -476,6 +479,7 @@ const Administration: React.FC<AdministrationProps> = ({ departments, titles, on
                                 <td className="px-6 py-4 whitespace-nowrap text-base text-gray-500">{report.createdAt.toDate().toLocaleDateString('vi-VN')}</td>
                                 <td className="px-6 py-4 whitespace-nowrap text-base text-gray-500">{report.expiresAt.toDate().toLocaleDateString('vi-VN')}</td>
                                 <td className="px-6 py-4 whitespace-nowrap text-base font-medium">
+                                    <button onClick={() => setViewingQRReport(report)} className="text-blue-600 hover:text-blue-900 mr-4" title="Xem QR & Link"><EyeIcon className="h-5 w-5" /></button>
                                     <button onClick={() => setEditingExpirationReport(report)} className="text-teal-600 hover:text-teal-900 mr-4" title="Sửa hạn"><PencilIcon className="h-5 w-5" /></button>
                                     <button onClick={() => setDeletingSharedReport(report)} className="text-red-600 hover:text-red-900" title="Xóa"><TrashIcon className="h-5 w-5" /></button>
                                 </td>
@@ -522,6 +526,14 @@ const Administration: React.FC<AdministrationProps> = ({ departments, titles, on
             {deletingItem && <ConfirmDeleteModal message={`Bạn có chắc chắn muốn xóa "${deletingItem.item.name}"?`} onConfirm={handleConfirmDelete} onClose={() => setDeletingItem(null)} />}
             {editingExpirationReport && <UpdateExpirationModal report={editingExpirationReport} onSave={handleUpdateExpiration} onClose={() => setEditingExpirationReport(null)} />}
             {deletingSharedReport && <ConfirmDeleteModal message={`Bạn có chắc chắn muốn xóa link chia sẻ cho báo cáo "${deletingSharedReport.reportTitle}" không?`} onConfirm={handleDeleteSharedReport} onClose={() => setDeletingSharedReport(null)} />}
+            {viewingQRReport && (
+                <ShareReportModal
+                    shareUrl={`${window.location.origin}/?id=${viewingQRReport.id}`}
+                    expiresAt={viewingQRReport.expiresAt.toDate()}
+                    token={viewingQRReport.token}
+                    onClose={() => setViewingQRReport(null)}
+                />
+            )}
             
             <style>{`
                 .input-style { box-sizing: border-box; width: 100%; padding: 0.5rem 0.75rem; border: 1px solid #D1D5DB; border-radius: 0.375rem; box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05); }
