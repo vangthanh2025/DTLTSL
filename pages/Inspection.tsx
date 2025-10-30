@@ -72,8 +72,7 @@ const Inspection: React.FC<InspectionProps> = ({ currentUser, allUsers, allCerti
                 certificate
             }))
             .filter((item): item is { user: UserData; certificate: Certificate } => !!item.user && item.user.status !== 'disabled')
-            // FIX: Property 'localeCompare' does not exist on type 'unknown'.
-            // Coerce user name to string to ensure localeCompare is available.
+            // FIX: Property 'localeCompare' does not exist on type 'unknown'. Cast user names to strings before comparing.
             .sort((a, b) => String(a.user.name).localeCompare(String(b.user.name), 'vi'));
     }, [selectedCertificateName, allCertificates, allUsers, activeMode]);
     

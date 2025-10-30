@@ -127,9 +127,7 @@ const LineChart: React.FC<{ data: number[], year: string }> = ({ data, year }) =
 
 const PieChart: React.FC<{ data: { [key: string]: number } }> = ({ data }) => {
     const colors = ['#34d399', '#fbbf24', '#60a5fa', '#a78bfa', '#f87171', '#fb923c'];
-    // FIX: Operator '+' cannot be applied to types 'unknown' and 'unknown'.
-    // Explicitly type accumulator and value in reduce function.
-    const total = Object.values(data).reduce((sum: number, value: number) => sum + value, 0);
+    const total = Object.values(data).reduce((sum, value) => sum + value, 0);
     if (total === 0) return <div className="h-72 flex items-center justify-center"><p className="text-center text-gray-500">Không có dữ liệu để hiển thị.</p></div>;
 
     let startAngle = -90; // Start from the top
@@ -137,8 +135,6 @@ const PieChart: React.FC<{ data: { [key: string]: number } }> = ({ data }) => {
 
     const slices = sortedYears.map((year, index) => {
         const value = data[year];
-        // FIX: The right-hand side of an arithmetic operation must be of type 'any', 'number', 'bigint' or an enum type.
-        // This is fixed by the change above ensuring 'total' is a number.
         const angle = (value / total) * 360;
         const endAngle = startAngle + angle;
 
@@ -168,7 +164,8 @@ const PieChart: React.FC<{ data: { [key: string]: number } }> = ({ data }) => {
                             fill={slice.color} 
                             className="transition-transform duration-200 origin-center group-hover:scale-105" 
                         />
-                        <title>{`${slice.year}: ${slice.value} chứng chỉ`}</title>
+                        {/* FIX: Changed title to reflect sum of credits ('tiết') instead of count of certificates ('chứng chỉ') */}
+                        <title>{`${slice.year}: ${slice.value} tiết`}</title>
                     </g>
                 ))}
             </svg>
@@ -211,13 +208,15 @@ const Statistics: React.FC<StatisticsProps> = ({ users, certificates, settings }
         });
 
         const totalCerts = certsInCycle.length;
-        const totalCreditsInCycle = certsInCycle.reduce((sum, cert) => sum + cert.credits, 0);
+        // FIX: Operator '+' cannot be applied to types 'unknown'. Explicitly convert `cert.credits` to a number.
+        const totalCreditsInCycle = certsInCycle.reduce((sum, cert) => sum + Number(cert.credits || 0), 0);
         const averageCredits = totalUsers > 0 ? (totalCreditsInCycle / totalUsers).toFixed(1) : '0.0';
 
         let compliantUsers = 0;
         const creditsPerUser = new Map<string, number>();
         certsInCycle.forEach(cert => {
-            creditsPerUser.set(cert.userId, (creditsPerUser.get(cert.userId) || 0) + cert.credits);
+            // FIX: The right-hand side of an arithmetic operation must be a number. Explicitly convert `cert.credits` to a number.
+            creditsPerUser.set(cert.userId, (creditsPerUser.get(cert.userId) || 0) + Number(cert.credits || 0));
         });
 
         filteredUsers.forEach(user => {
@@ -256,9 +255,8 @@ const Statistics: React.FC<StatisticsProps> = ({ users, certificates, settings }
         const data: { [key: string]: number } = {};
         filteredCertificates.forEach(cert => {
             const year = cert.date.toDate().getFullYear().toString();
-            // FIX: The left-hand side of an arithmetic operation must be of type 'any', 'number', 'bigint' or an enum type.
-            // Using nullish coalescing operator for safer type inference.
-            data[year] = (data[year] ?? 0) + 1;
+            // FIX: Arithmetic operation must be on numbers. Explicitly convert `cert.credits` to a number.
+            data[year] = (data[year] ?? 0) + Number(cert.credits || 0);
         });
         return data;
     }, [filteredCertificates]);

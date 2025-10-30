@@ -73,7 +73,7 @@ const menuItemColors: { [key: string]: NavItemColorProps } = {
         border: 'border-teal-500',
         text: 'text-teal-800'
     },
-    'Báo cáo & Thống kê': {
+    'Báo Cáo': {
         active: 'bg-gradient-to-r from-indigo-50 to-indigo-100',
         hover: 'md:hover:bg-indigo-100',
         border: 'border-indigo-500',
@@ -98,7 +98,7 @@ const Menubar: React.FC<MenubarProps> = ({ user, activeItem, onSelectItem }) => 
     const allMenuItems = [
         { id: 'Trang cá nhân', icon: <UserIcon className="h-5 w-5" />, label: 'Trang cá nhân', roles: ['admin', 'user', 'reporter_user'] },
         { id: 'Chứng Chỉ', icon: <CertificateIcon className="h-5 w-5" />, label: 'Chứng Chỉ', roles: ['admin', 'user', 'reporter_user'] },
-        { id: 'Báo cáo & Thống kê', icon: <ReportIcon className="h-5 w-5" />, label: 'Báo cáo & Thống kê', roles: ['admin', 'reporter', 'reporter_user'] },
+        { id: 'Báo Cáo', icon: <ReportIcon className="h-5 w-5" />, label: 'Báo Cáo', roles: ['admin', 'reporter', 'reporter_user'] },
         { id: 'Trợ lý AI', icon: <AIAssistantIcon className="h-5 w-5" />, label: 'Trợ lý AI', roles: ['admin', 'reporter', 'reporter_user'] },
         { id: 'Quản trị', icon: <AdminIcon className="h-5 w-5" />, label: 'Quản trị', roles: ['admin'] },
     ];

@@ -4,6 +4,10 @@ import React, { useState, useMemo, ReactNode } from 'react';
 import { UserData, Certificate, Department, Title, AppSettings } from '../App';
 import PrintIcon from '../components/icons/PrintIcon';
 import ExportIcon from '../components/icons/ExportIcon';
+import ShareIcon from '../components/icons/ShareIcon';
+import ShareReportModal from '../components/ShareReportModal';
+import { db } from '../firebase';
+import { addDoc, collection, Timestamp } from 'firebase/firestore';
 
 
 interface ComplianceReportRow {
@@ -37,6 +41,7 @@ type ReportRow = ComplianceReportRow | SummaryReportRow | DetailedReportRow;
 type SortableKeys = keyof ReportRow;
 
 interface ReportingProps {
+    user: UserData;
     users: UserData[];
     certificates: Certificate[];
     departments: Department[];
@@ -44,7 +49,7 @@ interface ReportingProps {
     settings: AppSettings | null;
 }
 
-const Reporting: React.FC<ReportingProps> = ({ users, certificates, departments, titles, settings }) => {
+const Reporting: React.FC<ReportingProps> = ({ user, users, certificates, departments, titles, settings }) => {
     const [reportType, setReportType] = useState('');
     const [filterMode, setFilterMode] = useState<'year' | 'all' | 'range'>('year');
     const [selectedYear, setSelectedYear] = useState(new Date().getFullYear().toString());
@@ -57,6 +62,8 @@ const Reporting: React.FC<ReportingProps> = ({ users, certificates, departments,
     const [reportData, setReportData] = useState<ReportRow[] | null>(null);
     const [reportHeaders, setReportHeaders] = useState<Record<string, string>>({});
     const [sortConfig, setSortConfig] = useState<{ key: SortableKeys; direction: 'ascending' | 'descending' } | null>(null);
+    const [shareModalInfo, setShareModalInfo] = useState<{ url: string; expiresAt: Date } | null>(null);
+
 
     const titleMap = useMemo(() => new Map(titles.map(t => [t.id, t.name])), [titles]);
     const departmentMap = useMemo(() => new Map(departments.map(d => [d.id, d.name])), [departments]);
@@ -121,8 +128,6 @@ const Reporting: React.FC<ReportingProps> = ({ users, certificates, departments,
                     certificates.forEach(cert => {
                         const certYear = cert.date.toDate().getFullYear();
                         if (certYear >= settings.complianceStartYear && certYear <= settings.complianceEndYear) {
-                            // FIX: The left-hand side of an arithmetic operation must be of type 'any', 'number', 'bigint' or an enum type.
-                            // Use nullish coalescing operator for safer type inference.
                             userCreditsMap.set(cert.userId, (userCreditsMap.get(cert.userId) ?? 0) + cert.credits);
                         }
                     });
@@ -150,9 +155,8 @@ const Reporting: React.FC<ReportingProps> = ({ users, certificates, departments,
                 case 'title_detail': {
                     const userCreditsMap = new Map<string, number>();
                     filteredCertsByTime.forEach(cert => {
-                        // FIX: The left-hand side of an arithmetic operation must be of type 'any', 'number', 'bigint' or an enum type.
-                        // Use nullish coalescing operator for safer type inference.
-                        userCreditsMap.set(cert.userId, (userCreditsMap.get(cert.userId) ?? 0) + cert.credits);
+                        // FIX: Arithmetic operation must be on numbers. Explicitly convert `cert.credits` to a number.
+                        userCreditsMap.set(cert.userId, (userCreditsMap.get(cert.userId) ?? 0) + Number(cert.credits || 0));
                     });
 
                     if (reportType === 'summary') {
@@ -168,9 +172,8 @@ const Reporting: React.FC<ReportingProps> = ({ users, certificates, departments,
                         filteredCertsByTime.forEach(cert => {
                             if (!userCertMap.has(cert.userId)) userCertMap.set(cert.userId, { certificates: [], totalCredits: 0 });
                             const entry = userCertMap.get(cert.userId)!;
-                            const credits = cert.credits;
-                            entry.certificates.push({ name: cert.name, credits: credits });
-                            entry.totalCredits += credits;
+                            entry.certificates.push({ name: cert.name, credits: cert.credits });
+                            entry.totalCredits = entry.totalCredits + cert.credits;
                         });
                         const reportResult: DetailedReportRow[] = Array.from(userCertMap.entries()).map(([userId, data]) => ({
                             id: userId, name: userMap.get(userId)?.name || 'Không rõ', ...data
@@ -243,6 +246,42 @@ const Reporting: React.FC<ReportingProps> = ({ users, certificates, departments,
     };
     
     const handlePrint = () => { window.print(); };
+
+    const handleShareReport = async () => {
+        if (!sortedReportData) return;
+
+        const reportTitleOptions: { [key: string]: string } = {
+            compliance: 'Báo cáo Tuân thủ theo Chu kỳ',
+            summary: 'Báo cáo Tổng hợp Toàn bộ',
+            detail: 'Báo cáo Chi tiết Chứng chỉ',
+            department: 'Báo cáo Tổng hợp theo Khoa/Phòng',
+            title_detail: 'Báo cáo Tổng hợp theo Chức danh',
+        };
+
+        const reportTitle = reportTitleOptions[reportType] || 'Báo cáo Tùy chỉnh';
+        const now = new Date();
+        const expiresAt = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000); // 7 days expiration
+
+        const sharePayload = {
+            reportTitle,
+            reportType,
+            reportHeaders: JSON.stringify(reportHeaders),
+            reportData: JSON.stringify(sortedReportData),
+            createdAt: Timestamp.fromDate(now),
+            expiresAt: Timestamp.fromDate(expiresAt),
+            createdBy: user.name,
+        };
+
+        try {
+            const docRef = await addDoc(collection(db, 'SharedReports'), sharePayload);
+            const shareUrl = `${window.location.origin}/share.html?id=${docRef.id}`;
+            setShareModalInfo({ url: shareUrl, expiresAt });
+        } catch (error) {
+            console.error("Error creating share link:", error);
+            alert("Đã xảy ra lỗi khi tạo liên kết chia sẻ. Vui lòng thử lại.");
+        }
+    };
+
 
     const handleExportExcel = () => {
         if (!sortedReportData) return;
@@ -546,6 +585,12 @@ const Reporting: React.FC<ReportingProps> = ({ users, certificates, departments,
                          <div className="flex items-center gap-3">
                             <button onClick={handlePrint} className="flex items-center gap-2 text-base bg-gray-200 text-gray-700 font-semibold py-2 px-3 rounded-md hover:bg-gray-300 transition-colors"><PrintIcon className="h-5 w-5" /><span>In</span></button>
                             <button onClick={handleExportExcel} className="flex items-center gap-2 text-base bg-green-600 text-white font-semibold py-2 px-3 rounded-md hover:bg-green-700 transition-colors"><ExportIcon className="h-5 w-5" /><span>Xuất Excel</span></button>
+                            {(user.role === 'admin' || user.role === 'reporter') && (
+                                <button onClick={handleShareReport} className="flex items-center gap-2 text-base bg-blue-600 text-white font-semibold py-2 px-3 rounded-md hover:bg-blue-700 transition-colors">
+                                    <ShareIcon className="h-5 w-5" />
+                                    <span>Chia sẻ</span>
+                                </button>
+                            )}
                         </div>
                     </div>
                     <div className="overflow-x-auto">
@@ -556,6 +601,15 @@ const Reporting: React.FC<ReportingProps> = ({ users, certificates, departments,
                     </div>
                 </div>
             )}
+            
+            {shareModalInfo && (
+                <ShareReportModal
+                    shareUrl={shareModalInfo.url}
+                    expiresAt={shareModalInfo.expiresAt}
+                    onClose={() => setShareModalInfo(null)}
+                />
+            )}
+
 
             <style>{`
                 @keyframes fade-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }

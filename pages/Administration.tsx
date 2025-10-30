@@ -295,7 +295,7 @@ const Administration: React.FC<AdministrationProps> = ({ departments, titles, on
     const renderUserManagement = () => (
         <div className="bg-white p-6 rounded-lg shadow-md mt-6">
             <div className="flex flex-col sm:flex-row justify-between items-center mb-4 gap-4">
-                <h3 className="text-lg font-semibold text-teal-700">Quản lý người dùng</h3>
+                <h3 className="text-lg font-semibold text-teal-700">Quản lý Tài khoản</h3>
                 <input type="text" placeholder="Tìm kiếm theo họ tên..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full sm:w-1/3 px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-500" />
                 <button onClick={() => setIsAddModalOpen(true)} className="bg-teal-600 text-white font-semibold py-2 px-4 rounded-lg flex items-center justify-center gap-2 hover:bg-teal-700 transition-colors w-full sm:w-auto"><PlusIcon className="h-5 w-5" /><span>Thêm người dùng</span></button>
             </div>
@@ -406,8 +406,8 @@ const Administration: React.FC<AdministrationProps> = ({ departments, titles, on
             <h1 className="text-2xl font-bold text-teal-800 mb-4">Quản trị hệ thống</h1>
             <div className="border-b border-gray-200">
                 <nav className="-mb-px flex space-x-8" aria-label="Tabs">
-                    <button onClick={() => setActiveTab('userManagement')} className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-base ${activeTab === 'userManagement' ? 'border-teal-500 text-teal-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}>Quản lý người dùng</button>
-                    <button onClick={() => setActiveTab('categoryManagement')} className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-base ${activeTab === 'categoryManagement' ? 'border-teal-500 text-teal-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}>Quản lý Danh mục</button>
+                    <button onClick={() => setActiveTab('userManagement')} className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-base ${activeTab === 'userManagement' ? 'border-teal-500 text-teal-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}>Tài khoản</button>
+                    <button onClick={() => setActiveTab('categoryManagement')} className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-base ${activeTab === 'categoryManagement' ? 'border-teal-500 text-teal-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}>Danh mục</button>
                     <button onClick={() => setActiveTab('geminiKeyManagement')} className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-base ${activeTab === 'geminiKeyManagement' ? 'border-teal-500 text-teal-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}>Quản lý API</button>
                     <button onClick={() => setActiveTab('settings')} className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-base ${activeTab === 'settings' ? 'border-teal-500 text-teal-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}>Cài đặt</button>
                 </nav>

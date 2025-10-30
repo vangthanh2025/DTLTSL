@@ -1,6 +1,3 @@
-
-
-
 import React, { useState, useEffect } from 'react';
 import { db } from '../firebase';
 import { collection, getDocs, doc, updateDoc, deleteDoc } from 'firebase/firestore';
@@ -126,7 +123,7 @@ const Reports: React.FC<ReportsProps> = ({ user, settings, departments, titles, 
             case 'Thống kê':
                 return <Statistics users={users} certificates={certificates} settings={settings} />;
             case 'Báo cáo':
-                return <Reporting users={users} certificates={certificates} departments={departments} titles={titles} settings={settings} />;
+                return <Reporting user={user} users={users} certificates={certificates} departments={departments} titles={titles} settings={settings} />;
             case 'Kiểm tra':
                 return <Inspection 
                             currentUser={user}
@@ -145,7 +142,7 @@ const Reports: React.FC<ReportsProps> = ({ user, settings, departments, titles, 
 
     return (
         <div>
-            <h1 className="text-2xl font-bold text-teal-800 mb-4">Báo cáo & Thống kê</h1>
+            <h1 className="text-2xl font-bold text-teal-800 mb-4">Báo Cáo</h1>
 
             <div className="border-b border-gray-200 mb-4">
                 <nav className="-mb-px flex space-x-8" aria-label="Tabs">

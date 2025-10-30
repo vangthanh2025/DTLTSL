@@ -2,6 +2,7 @@
 
 
 
+
 import React, { useState } from 'react';
 import Header from '../components/Header';
 import Menubar from '../components/Menubar';
@@ -34,7 +35,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onUserUpdate, dep
           case 'reporter_user':
               return 'Trang cá nhân';
           case 'reporter':
-              return 'Báo cáo & Thống kê';
+              return 'Báo Cáo';
           default:
               return 'Trang cá nhân'; // Fallback for undefined roles
       }
@@ -61,7 +62,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onUserUpdate, dep
         return <AIAssistant geminiApiKey={geminiApiKey} />;
       case 'Chứng Chỉ':
         return <Certificates user={user} geminiApiKey={geminiApiKey} />;
-      case 'Báo cáo & Thống kê':
+      case 'Báo Cáo':
          if (user.role === 'admin' || user.role === 'reporter' || user.role === 'reporter_user') {
           // FIX: Pass geminiApiKey to the Reports component.
           return <Reports user={user} settings={settings} departments={departments} titles={titles} geminiApiKey={geminiApiKey} />;
