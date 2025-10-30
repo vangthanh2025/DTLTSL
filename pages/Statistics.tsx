@@ -1,5 +1,3 @@
-
-
 import React, { useState, useMemo } from 'react';
 import { UserData, Certificate, AppSettings } from '../App';
 import UserGroupIcon from '../components/icons/UserGroupIcon';
@@ -127,7 +125,8 @@ const LineChart: React.FC<{ data: number[], year: string }> = ({ data, year }) =
 
 const PieChart: React.FC<{ data: { [key: string]: number } }> = ({ data }) => {
     const colors = ['#34d399', '#fbbf24', '#60a5fa', '#a78bfa', '#f87171', '#fb923c'];
-    const total = Object.values(data).reduce((sum, value) => sum + value, 0);
+    // FIX: Add explicit types to reduce callback parameters to prevent type inference issues.
+    const total = Object.values(data).reduce((sum: number, value: number) => sum + value, 0);
     if (total === 0) return <div className="h-72 flex items-center justify-center"><p className="text-center text-gray-500">Không có dữ liệu để hiển thị.</p></div>;
 
     let startAngle = -90; // Start from the top
@@ -208,15 +207,14 @@ const Statistics: React.FC<StatisticsProps> = ({ users, certificates, settings }
         });
 
         const totalCerts = certsInCycle.length;
-        // FIX: Operator '+' cannot be applied to types 'unknown'. Explicitly convert `cert.credits` to a number.
-        const totalCreditsInCycle = certsInCycle.reduce((sum, cert) => sum + Number(cert.credits || 0), 0);
+        // FIX: Add explicit types to reduce callback parameters to ensure correct type inference for credit summation.
+        const totalCreditsInCycle = certsInCycle.reduce((sum: number, cert) => sum + cert.credits, 0);
         const averageCredits = totalUsers > 0 ? (totalCreditsInCycle / totalUsers).toFixed(1) : '0.0';
 
         let compliantUsers = 0;
         const creditsPerUser = new Map<string, number>();
         certsInCycle.forEach(cert => {
-            // FIX: The right-hand side of an arithmetic operation must be a number. Explicitly convert `cert.credits` to a number.
-            creditsPerUser.set(cert.userId, (creditsPerUser.get(cert.userId) || 0) + Number(cert.credits || 0));
+            creditsPerUser.set(cert.userId, (creditsPerUser.get(cert.userId) || 0) + cert.credits);
         });
 
         filteredUsers.forEach(user => {
@@ -255,8 +253,7 @@ const Statistics: React.FC<StatisticsProps> = ({ users, certificates, settings }
         const data: { [key: string]: number } = {};
         filteredCertificates.forEach(cert => {
             const year = cert.date.toDate().getFullYear().toString();
-            // FIX: Arithmetic operation must be on numbers. Explicitly convert `cert.credits` to a number.
-            data[year] = (data[year] ?? 0) + Number(cert.credits || 0);
+            data[year] = (data[year] ?? 0) + cert.credits;
         });
         return data;
     }, [filteredCertificates]);

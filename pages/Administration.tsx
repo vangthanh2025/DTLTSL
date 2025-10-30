@@ -87,15 +87,23 @@ const Administration: React.FC<AdministrationProps> = ({ departments, titles, on
                     getDocs(collection(db, 'KeyGemini'))
                 ]);
                 
-                const userList = userSnapshot.docs.map(doc => {
+                const userList: UserData[] = [];
+                userSnapshot.docs.forEach(doc => {
                     const data = doc.data();
+                    const docId = doc.id;
+
+                    if (typeof data.name !== 'string' || data.name.trim() === '') {
+                        console.error(`Validation Error: User document '${docId}' has invalid or missing 'name'. Skipping.`);
+                        return;
+                    }
+
                     // Transform legacy boolean status
                     if (typeof data.status === 'boolean') {
                         data.status = data.status ? 'active' : 'disabled';
                     } else if (!data.status) {
                         data.status = 'active'; // Default for old accounts
                     }
-                    return { id: doc.id, ...data } as UserData;
+                    userList.push({ id: doc.id, ...data } as UserData);
                 });
                 setUsers(userList);
 

@@ -32,19 +32,33 @@ const Reports: React.FC<ReportsProps> = ({ user, settings, departments, titles, 
                 const certsPromise = getDocs(collection(db, 'Certificates'));
                 const [userSnapshot, certsSnapshot] = await Promise.all([usersPromise, certsPromise]);
                 
-                const userList = userSnapshot.docs.map(doc => {
+                const userList: UserData[] = [];
+                userSnapshot.docs.forEach(doc => {
                     const data = doc.data();
+                    const docId = doc.id;
+
+                    if (typeof data.name !== 'string' || data.name.trim() === '') {
+                        console.error(`Validation Error: User document '${docId}' has invalid or missing 'name'. Skipping.`);
+                        return;
+                    }
+
                     if (typeof data.status === 'boolean') {
                         data.status = data.status ? 'active' : 'disabled';
                     } else if (!data.status) {
                         data.status = 'active';
                     }
-                    return { id: doc.id, ...data } as UserData;
+                    userList.push({ id: docId, ...data } as UserData);
                 });
                 
-                const certsList = certsSnapshot.docs.map(doc => {
+                const certsList: Certificate[] = [];
+                certsSnapshot.docs.forEach(doc => {
                     const data = doc.data();
-                    return { id: doc.id, ...data } as Certificate;
+                    const docId = doc.id;
+                    if (typeof data.credits !== 'number') {
+                        console.error(`Validation Error: Certificate document '${docId}' has invalid or missing 'credits' (type: ${typeof data.credits}). Skipping.`);
+                        return;
+                    }
+                    certsList.push({ id: docId, ...data } as Certificate);
                 });
                 
                 setUsers(userList);

@@ -1,6 +1,3 @@
-
-
-
 // FIX: Import useState and useEffect from React to resolve reference errors.
 import React, { useState, useEffect } from 'react';
 import { UserData, Department, Title, AppSettings, Certificate } from '../App';
@@ -71,6 +68,12 @@ const Profile: React.FC<ProfileProps> = ({ user, onUserUpdate, departments, titl
                 let totalCredits = 0;
                 querySnapshot.forEach(doc => {
                     const cert = doc.data();
+                    const docId = doc.id;
+                    if (typeof cert.credits !== 'number') {
+                        console.error(`Validation Error: Certificate document '${docId}' for user '${user.id}' has invalid 'credits'. Skipping for credit calculation.`);
+                        return;
+                    }
+
                     const certYear = cert.date.toDate().getFullYear();
                     if (settings && certYear >= settings.complianceStartYear && certYear <= settings.complianceEndYear) {
                         totalCredits += cert.credits;

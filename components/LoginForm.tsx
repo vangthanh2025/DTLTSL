@@ -41,6 +41,13 @@ const LoginForm: React.FC<LoginFormProps> = ({ onLoginSuccess }) => {
       const userDocRef = doc(db, 'Users', userDoc.id);
       let userData = userDoc.data() as Partial<UserData>;
 
+      if (typeof userData.name !== 'string' || !userData.name.trim()) {
+        console.error(`Login Error: User document '${userDoc.id}' has an invalid or missing 'name'.`);
+        setError('Dữ liệu tài khoản không hợp lệ. Vui lòng liên hệ quản trị viên.');
+        setLoading(false);
+        return;
+      }
+
       // Handle legacy boolean status
       if (typeof userData.status === 'boolean') {
           userData.status = userData.status ? 'active' : 'disabled';

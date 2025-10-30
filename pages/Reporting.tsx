@@ -1,5 +1,3 @@
-
-
 import React, { useState, useMemo, ReactNode } from 'react';
 import { UserData, Certificate, Department, Title, AppSettings } from '../App';
 import PrintIcon from '../components/icons/PrintIcon';
@@ -127,8 +125,9 @@ const Reporting: React.FC<ReportingProps> = ({ user, users, certificates, depart
                     const userCreditsMap = new Map<string, number>();
                     certificates.forEach(cert => {
                         const certYear = cert.date.toDate().getFullYear();
-                        if (certYear >= settings.complianceStartYear && certYear <= settings.complianceEndYear) {
-                            userCreditsMap.set(cert.userId, (userCreditsMap.get(cert.userId) ?? 0) + cert.credits);
+                        if (settings && certYear >= settings.complianceStartYear && certYear <= settings.complianceEndYear) {
+                            // FIX: Explicitly cast values to Number to avoid arithmetic errors with mixed types.
+                            userCreditsMap.set(cert.userId, Number(userCreditsMap.get(cert.userId) ?? 0) + Number(cert.credits));
                         }
                     });
 
@@ -155,8 +154,8 @@ const Reporting: React.FC<ReportingProps> = ({ user, users, certificates, depart
                 case 'title_detail': {
                     const userCreditsMap = new Map<string, number>();
                     filteredCertsByTime.forEach(cert => {
-                        // FIX: Arithmetic operation must be on numbers. Explicitly convert `cert.credits` to a number.
-                        userCreditsMap.set(cert.userId, (userCreditsMap.get(cert.userId) ?? 0) + Number(cert.credits || 0));
+                        // FIX: Explicitly cast values to Number to avoid arithmetic errors with mixed types.
+                        userCreditsMap.set(cert.userId, Number(userCreditsMap.get(cert.userId) ?? 0) + Number(cert.credits));
                     });
 
                     if (reportType === 'summary') {

@@ -1,5 +1,3 @@
-
-
 import React, { useState, useEffect, useMemo } from 'react';
 import { db } from '../firebase';
 import { collection, query, where, getDocs, doc, updateDoc, deleteDoc, addDoc } from 'firebase/firestore';
@@ -62,12 +60,18 @@ const Certificates: React.FC<CertificatesProps> = ({ user, geminiApiKey }) => {
                 const certsCollection = collection(db, 'Certificates');
                 const q = query(certsCollection, where('userId', '==', user.id));
                 const certsSnapshot = await getDocs(q);
-                const certsList = certsSnapshot.docs.map(doc => {
+                
+                const certsList: Certificate[] = [];
+                certsSnapshot.docs.forEach(doc => {
                     const data = doc.data();
-                    return {
-                        id: doc.id,
-                        ...data
-                    } as Certificate
+                    const docId = doc.id;
+
+                    if (typeof data.credits !== 'number') {
+                        console.error(`Validation Error: Certificate document '${docId}' has invalid or missing 'credits' (type: ${typeof data.credits}). Skipping.`);
+                        return;
+                    }
+
+                    certsList.push({ id: doc.id, ...data } as Certificate);
                 });
 
                 certsList.sort((a, b) => b.date.toDate().getTime() - a.date.toDate().getTime());

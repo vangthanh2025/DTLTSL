@@ -88,44 +88,48 @@ const CameraModal: React.FC<CameraModalProps> = ({ onCapture, onClose }) => {
     };
 
     return (
-        <div className="fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center z-50 p-4">
-            <div className="relative w-full max-w-4xl bg-gray-900 rounded-lg overflow-hidden shadow-xl">
-                <button onClick={onClose} className="absolute top-2 right-2 text-white bg-black/50 rounded-full p-2 z-10 hover:bg-black/75">
+        <div className="fixed inset-0 bg-black z-50">
+            <div className="relative w-full h-full bg-gray-900 flex items-center justify-center">
+                <button onClick={onClose} className="absolute top-4 right-4 text-white bg-black/50 rounded-full p-2 z-20 hover:bg-black/75">
                     <CloseIcon className="h-6 w-6" />
                 </button>
 
-                <div className="aspect-video w-full flex items-center justify-center">
-                    {error ? (
-                        <p className="text-red-400 p-8 text-center">{error}</p>
+                <div className="w-full h-full">
+                     {error ? (
+                        <div className="w-full h-full flex items-center justify-center">
+                            <p className="text-red-400 p-8 text-center">{error}</p>
+                        </div>
                     ) : (
                         <>
                             {isStarting && !capturedImage && (
-                                <div className="text-white animate-pulse">Đang mở camera...</div>
+                                 <div className="w-full h-full flex items-center justify-center">
+                                    <div className="text-white animate-pulse">Đang mở camera...</div>
+                                </div>
                             )}
                             <video
                                 ref={videoRef}
                                 autoPlay
                                 playsInline
-                                muted // Ensure muted is set
-                                className={`w-full h-full object-contain ${capturedImage || isStarting ? 'hidden' : 'block'}`}
+                                muted
+                                className={`w-full h-full object-cover ${capturedImage || isStarting ? 'hidden' : 'block'}`}
                             />
                             {capturedImage && (
-                                <img src={capturedImage} alt="Ảnh đã chụp" className="w-full h-full object-contain" />
+                                <img src={capturedImage} alt="Ảnh đã chụp" className="w-full h-full object-cover" />
                             )}
                             <canvas ref={canvasRef} className="hidden" />
                         </>
                     )}
                 </div>
 
-                <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/80 to-transparent flex justify-center items-center">
+                <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/80 to-transparent flex justify-center items-center z-10">
                     {!capturedImage ? (
-                         <button onClick={handleCapture} disabled={!!error || isStarting} className="w-16 h-16 rounded-full bg-white border-4 border-gray-400 ring-2 ring-white ring-offset-2 ring-offset-gray-900 focus:outline-none focus:ring-teal-500 disabled:opacity-50"></button>
+                         <button onClick={handleCapture} disabled={!!error || isStarting} className="w-20 h-20 rounded-full bg-white border-4 border-gray-400 ring-4 ring-white ring-offset-2 ring-offset-gray-900 focus:outline-none focus:ring-teal-500 disabled:opacity-50"></button>
                     ) : (
                         <div className="flex gap-8">
-                             <button onClick={handleRetake} className="text-white font-semibold py-2 px-4 rounded-lg bg-gray-700 hover:bg-gray-600">
+                             <button onClick={handleRetake} className="text-white font-semibold py-3 px-6 rounded-lg bg-gray-700 hover:bg-gray-600 text-lg">
                                 Chụp lại
                             </button>
-                             <button onClick={handleConfirm} className="text-white font-semibold py-2 px-4 rounded-lg bg-teal-600 hover:bg-teal-700">
+                             <button onClick={handleConfirm} className="text-white font-semibold py-3 px-6 rounded-lg bg-teal-600 hover:bg-teal-700 text-lg">
                                 Xác nhận
                             </button>
                         </div>
