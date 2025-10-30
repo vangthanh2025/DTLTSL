@@ -65,6 +65,13 @@ const SharedReportView: React.FC<SharedReportViewProps> = ({ shareId }) => {
                 }
                 
                 setReport(data);
+
+                // Hide token from URL after successful validation
+                if (urlToken) {
+                    const newUrl = new URL(window.location.href);
+                    newUrl.searchParams.delete('token');
+                    window.history.replaceState({}, document.title, newUrl.toString());
+                }
             } catch (err) {
                 console.error(err);
                 setError("Đã xảy ra lỗi khi tải báo cáo.");

@@ -208,13 +208,14 @@ const Statistics: React.FC<StatisticsProps> = ({ users, certificates, settings }
 
         const totalCerts = certsInCycle.length;
         // FIX: Add explicit types to reduce callback parameters to ensure correct type inference for credit summation.
-        const totalCreditsInCycle = certsInCycle.reduce((sum: number, cert: Certificate) => sum + cert.credits, 0);
+        const totalCreditsInCycle = certsInCycle.reduce((sum: number, cert: Certificate) => sum + Number(cert.credits), 0);
         const averageCredits = totalUsers > 0 ? (totalCreditsInCycle / totalUsers).toFixed(1) : '0.0';
 
         let compliantUsers = 0;
         const creditsPerUser = new Map<string, number>();
         certsInCycle.forEach(cert => {
-            creditsPerUser.set(cert.userId, (creditsPerUser.get(cert.userId) || 0) + cert.credits);
+            // FIX: Explicitly cast `cert.credits` to a number to prevent arithmetic errors with inconsistent data types from Firestore.
+            creditsPerUser.set(cert.userId, (creditsPerUser.get(cert.userId) || 0) + Number(cert.credits));
         });
 
         filteredUsers.forEach(user => {
@@ -253,7 +254,8 @@ const Statistics: React.FC<StatisticsProps> = ({ users, certificates, settings }
         const data: { [key: string]: number } = {};
         filteredCertificates.forEach(cert => {
             const year = cert.date.toDate().getFullYear().toString();
-            data[year] = (data[year] ?? 0) + cert.credits;
+            // FIX: Explicitly cast `cert.credits` to a number to prevent arithmetic errors with inconsistent data types from Firestore.
+            data[year] = (data[year] ?? 0) + Number(cert.credits);
         });
         return data;
     }, [filteredCertificates]);
