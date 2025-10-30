@@ -2,11 +2,13 @@ import React, { useState } from 'react';
 import CloseIcon from './icons/CloseIcon';
 import CheckIcon from './icons/CheckIcon';
 import DownloadIcon from './icons/DownloadIcon';
+import { UserData } from '../App';
 
 interface ShareReportModalProps {
     shareUrl: string;
     expiresAt: Date;
     token: string;
+    userRole: UserData['role'];
     onClose: () => void;
 }
 
@@ -17,7 +19,7 @@ const CopyIcon: React.FC<{ className?: string }> = ({ className }) => (
 );
 
 
-const ShareReportModal: React.FC<ShareReportModalProps> = ({ shareUrl, expiresAt, token, onClose }) => {
+const ShareReportModal: React.FC<ShareReportModalProps> = ({ shareUrl, expiresAt, token, userRole, onClose }) => {
     const [copyImageStatus, setCopyImageStatus] = useState<'idle' | 'success'>('idle');
     const [copyLinkStatus, setCopyLinkStatus] = useState<'idle' | 'success'>('idle');
     const [isDownloading, setIsDownloading] = useState(false);
@@ -95,27 +97,29 @@ const ShareReportModal: React.FC<ShareReportModalProps> = ({ shareUrl, expiresAt
                 </div>
 
                 <div className="space-y-4">
-                     <div>
-                        <label htmlFor="share-link-input" className="text-sm font-medium text-gray-700 text-left block mb-1">Liên kết chia sẻ</label>
-                        <div className="flex items-center gap-2">
-                            <input
-                                id="share-link-input"
-                                type="text"
-                                value={fullShareUrl}
-                                readOnly
-                                className="flex-grow bg-gray-100 p-2 border border-gray-300 rounded-md text-sm w-full"
-                                onFocus={(e) => e.target.select()}
-                            />
-                            <button
-                                onClick={handleCopyLink}
-                                className={`flex-shrink-0 p-2 rounded-md transition-colors border ${copyLinkStatus === 'success' ? 'bg-green-100 border-green-300' : 'bg-white border-gray-300 hover:bg-gray-50'}`}
-                                aria-label="Sao chép liên kết"
-                                disabled={copyLinkStatus === 'success'}
-                            >
-                                {copyLinkStatus === 'success' ? <CheckIcon className="h-5 w-5 text-green-600" /> : <CopyIcon className="h-5 w-5 text-gray-600" />}
-                            </button>
+                     {userRole === 'admin' && (
+                        <div>
+                            <label htmlFor="share-link-input" className="text-sm font-medium text-gray-700 text-left block mb-1">Liên kết chia sẻ</label>
+                            <div className="flex items-center gap-2">
+                                <input
+                                    id="share-link-input"
+                                    type="text"
+                                    value={fullShareUrl}
+                                    readOnly
+                                    className="flex-grow bg-gray-100 p-2 border border-gray-300 rounded-md text-sm w-full"
+                                    onFocus={(e) => e.target.select()}
+                                />
+                                <button
+                                    onClick={handleCopyLink}
+                                    className={`flex-shrink-0 p-2 rounded-md transition-colors border ${copyLinkStatus === 'success' ? 'bg-green-100 border-green-300' : 'bg-white border-gray-300 hover:bg-gray-50'}`}
+                                    aria-label="Sao chép liên kết"
+                                    disabled={copyLinkStatus === 'success'}
+                                >
+                                    {copyLinkStatus === 'success' ? <CheckIcon className="h-5 w-5 text-green-600" /> : <CopyIcon className="h-5 w-5 text-gray-600" />}
+                                </button>
+                            </div>
                         </div>
-                    </div>
+                     )}
 
                     <div className="flex items-center justify-center gap-4">
                         <button 

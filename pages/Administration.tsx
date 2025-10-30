@@ -531,6 +531,7 @@ const Administration: React.FC<AdministrationProps> = ({ departments, titles, on
                     shareUrl={`${window.location.origin}/?id=${viewingQRReport.id}`}
                     expiresAt={viewingQRReport.expiresAt.toDate()}
                     token={viewingQRReport.token}
+                    userRole="admin"
                     onClose={() => setViewingQRReport(null)}
                 />
             )}

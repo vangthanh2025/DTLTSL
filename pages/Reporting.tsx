@@ -419,7 +419,7 @@ const Reporting: React.FC<ReportingProps> = ({ user, users, certificates, depart
             );
         }
         
-        const value = row[key as keyof ReportRow];
+        const value = (row as any)[key];
 
         if (key === 'status' && 'status' in row) {
             const status = row.status;
@@ -639,7 +639,7 @@ const Reporting: React.FC<ReportingProps> = ({ user, users, certificates, depart
                          <div className="flex items-center gap-3">
                             <button onClick={handlePrint} className="flex items-center gap-2 text-base bg-gray-200 text-gray-700 font-semibold py-2 px-3 rounded-md hover:bg-gray-300 transition-colors"><PrintIcon className="h-5 w-5" /><span>In</span></button>
                             <button onClick={handleExportExcel} className="flex items-center gap-2 text-base bg-green-600 text-white font-semibold py-2 px-3 rounded-md hover:bg-green-700 transition-colors"><ExportIcon className="h-5 w-5" /><span>Xuất Excel</span></button>
-                            {(user.role === 'admin' || user.role === 'reporter' || user.role === 'reporter_user') && (
+                            {['admin', 'reporter', 'reporter_user'].includes(user.role) && (
                                 <button onClick={handleShareReport} className="flex items-center gap-2 text-base bg-blue-600 text-white font-semibold py-2 px-3 rounded-md hover:bg-blue-700 transition-colors">
                                     <ShareIcon className="h-5 w-5" />
                                     <span>Chia sẻ</span>
@@ -661,6 +661,7 @@ const Reporting: React.FC<ReportingProps> = ({ user, users, certificates, depart
                     shareUrl={shareModalInfo.url}
                     expiresAt={shareModalInfo.expiresAt}
                     token={shareModalInfo.token}
+                    userRole={user.role}
                     onClose={() => setShareModalInfo(null)}
                 />
             )}

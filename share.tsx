@@ -116,7 +116,7 @@ const SharedReportView: React.FC = () => {
             );
         }
         
-        const value = row[key as keyof ReportRow];
+        const value = (row as any)[key];
         if (key === 'status' && 'status' in row) {
             const status = row.status;
             const isCompliant = status === 'Đã đạt';
@@ -126,8 +126,71 @@ const SharedReportView: React.FC = () => {
         return 'N/A';
     };
 
+    const renderGroupedReport = (groupBy: 'department' | 'title') => {
+        const groupHeaderLabel = groupBy === 'department' ? 'Khoa/Phòng' : 'Chức danh';
+        const dataRows = data as SummaryReportRow[];
+        
+        const groupedData: { [key: string]: { rows: SummaryReportRow[], totalCredits: number } } = {};
+    
+        dataRows.forEach(row => {
+            const groupName = groupBy === 'department' ? row.department : row.title;
+            if (!groupName) return; // Skip if no group name
+            if (!groupedData[groupName]) {
+                groupedData[groupName] = { rows: [], totalCredits: 0 };
+            }
+            groupedData[groupName].rows.push(row);
+            groupedData[groupName].totalCredits += row.totalCredits;
+        });
+    
+        const sortedGroupNames = Object.keys(groupedData).sort((a, b) => a.localeCompare(b, 'vi'));
+    
+        return (
+            <table className="min-w-full bg-white border border-gray-300 border-collapse">
+                <thead className="bg-gray-50">
+                    <tr>
+                        <th className="px-4 py-3 text-left text-sm font-medium text-gray-500 uppercase tracking-wider border border-gray-300 w-12">STT</th>
+                        <th className="px-4 py-3 text-left text-sm font-medium text-gray-500 uppercase tracking-wider border border-gray-300">Họ tên</th>
+                        <th className="px-4 py-3 text-left text-sm font-medium text-gray-500 uppercase tracking-wider border border-gray-300 w-32">Tổng số tiết</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {sortedGroupNames.length === 0 && (
+                        <tr>
+                            <td colSpan={3} className="text-center py-4 text-gray-500">Không có dữ liệu.</td>
+                        </tr>
+                    )}
+                    {sortedGroupNames.flatMap(groupName => {
+                        const group = groupedData[groupName];
+                        const groupRows = group.rows.map((row, index) => (
+                            <tr key={row.id} className="hover:bg-gray-50">
+                                <td className="px-4 py-3 border border-gray-300 text-center">{index + 1}</td>
+                                <td className="px-4 py-3 border border-gray-300">{row.name}</td>
+                                <td className="px-4 py-3 border border-gray-300 text-center">{row.totalCredits}</td>
+                            </tr>
+                        ));
+    
+                        return [
+                            <tr key={`${groupName}-header`} className="bg-teal-50 sticky top-0">
+                                <td colSpan={3} className="px-4 py-2 border border-gray-300 font-bold text-teal-800">{groupHeaderLabel}: {groupName}</td>
+                            </tr>,
+                            ...groupRows,
+                            <tr key={`${groupName}-footer`} className="bg-gray-100">
+                                <td colSpan={2} className="px-4 py-2 border border-gray-300 text-right font-bold">Tổng cộng</td>
+                                <td className="px-4 py-2 border border-gray-300 text-center font-bold">{group.totalCredits}</td>
+                            </tr>
+                        ];
+                    })}
+                </tbody>
+            </table>
+        );
+    };
+
     const renderReportTable = () => {
         if (!data || data.length === 0) return <p className="text-center text-gray-500 py-8">Không có dữ liệu trong báo cáo.</p>;
+
+        if (reportType === 'department' || reportType === 'title_detail') {
+            return renderGroupedReport(reportType === 'department' ? 'department' : 'title');
+        }
 
         if (reportType === 'detail') {
             return (
@@ -197,7 +260,9 @@ const SharedReportView: React.FC = () => {
                 </div>
             </header>
             <main id="report-content" className="bg-white p-6 rounded-lg shadow-md">
-                {renderReportTable()}
+                <div className="overflow-x-auto">
+                    {renderReportTable()}
+                </div>
             </main>
             <footer className="text-center text-gray-500 mt-8 text-sm">
                 <p>Hệ thống Quản lý Đào tạo Liên tục</p>
