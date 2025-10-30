@@ -113,49 +113,76 @@ const SharedReportView: React.FC<SharedReportViewProps> = ({ shareId }) => {
 
         if (reportType === 'detail') {
             return (
-                <table className="min-w-full bg-white border border-gray-300 border-collapse">
-                    <thead className="bg-gray-50">
-                        <tr>
-                            <th className="px-4 py-3 text-left text-sm font-medium text-gray-500 uppercase tracking-wider border border-gray-300 w-12">STT</th>
-                            <th className="px-4 py-3 text-left text-sm font-medium text-gray-500 uppercase tracking-wider border border-gray-300">Họ và tên</th>
-                            <th className="px-4 py-3 text-left text-sm font-medium text-gray-500 uppercase tracking-wider border border-gray-300">Tên chứng chỉ</th>
-                            <th className="px-4 py-3 text-left text-sm font-medium text-gray-500 uppercase tracking-wider border border-gray-300 w-24">Số tiết</th>
-                            <th className="px-4 py-3 text-left text-sm font-medium text-gray-500 uppercase tracking-wider border border-gray-300 w-24">Tổng tiết</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {(data as DetailedReportRow[]).flatMap((userRow, userIndex) => 
-                            userRow.certificates.map((cert, certIndex) => (
-                                <tr key={`${userRow.id}-${certIndex}`} className="hover:bg-gray-50">
-                                    {certIndex === 0 && ( <> <td rowSpan={userRow.certificates.length} className="px-4 py-3 border border-gray-300 text-center align-top">{userIndex + 1}</td> <td rowSpan={userRow.certificates.length} className="px-4 py-3 border border-gray-300 align-top">{userRow.name}</td> </> )}
-                                    <td className="px-4 py-3 border border-gray-300">{cert.name}</td>
-                                    <td className="px-4 py-3 border border-gray-300 text-center">{cert.credits}</td>
-                                    {certIndex === 0 && ( <td rowSpan={userRow.certificates.length} className="px-4 py-3 border border-gray-300 text-center align-top">{userRow.totalCredits}</td> )}
-                                </tr>
-                            ))
-                        )}
-                    </tbody>
-                </table>
+              <>
+                {/* Mobile View: Card-based Layout */}
+                <div className="md:hidden space-y-4">
+                    {(data as DetailedReportRow[]).map((userRow, userIndex) => (
+                        <div key={userRow.id} className="bg-white rounded-lg shadow-md overflow-hidden border border-gray-200">
+                            <div className="p-4 bg-slate-50 border-b">
+                                <h3 className="font-bold text-lg text-teal-800">{userIndex + 1}. {userRow.name}</h3>
+                                <p className="font-semibold text-gray-600">Tổng tiết: <span className="text-teal-700">{userRow.totalCredits}</span></p>
+                            </div>
+                            <ul className="divide-y divide-gray-200">
+                                {userRow.certificates.map((cert, certIndex) => (
+                                    <li key={certIndex} className="px-4 py-3 flex justify-between items-start">
+                                        <p className="text-gray-800 flex-1 pr-4">{cert.name}</p>
+                                        <p className="font-bold text-teal-800 bg-teal-100 rounded-full px-3 py-1 text-sm flex-shrink-0">{cert.credits}</p>
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
+                    ))}
+                </div>
+
+                {/* Desktop View: Table Layout */}
+                <div className="hidden md:block overflow-x-auto">
+                    <table className="min-w-full bg-white border border-gray-300 border-collapse">
+                        <thead className="bg-gray-50">
+                            <tr>
+                                <th className="px-4 py-3 text-left text-sm font-medium text-gray-500 uppercase tracking-wider border border-gray-300 w-12">STT</th>
+                                <th className="px-4 py-3 text-left text-sm font-medium text-gray-500 uppercase tracking-wider border border-gray-300">Họ và tên</th>
+                                <th className="px-4 py-3 text-left text-sm font-medium text-gray-500 uppercase tracking-wider border border-gray-300">Tên chứng chỉ</th>
+                                <th className="px-4 py-3 text-left text-sm font-medium text-gray-500 uppercase tracking-wider border border-gray-300 w-24">Số tiết</th>
+                                <th className="px-4 py-3 text-left text-sm font-medium text-gray-500 uppercase tracking-wider border border-gray-300 w-24">Tổng tiết</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {(data as DetailedReportRow[]).flatMap((userRow, userIndex) => 
+                                userRow.certificates.map((cert, certIndex) => (
+                                    <tr key={`${userRow.id}-${certIndex}`} className="hover:bg-gray-50">
+                                        {certIndex === 0 && ( <> <td rowSpan={userRow.certificates.length} className="px-4 py-3 border border-gray-300 text-center align-top">{userIndex + 1}</td> <td rowSpan={userRow.certificates.length} className="px-4 py-3 border border-gray-300 align-top font-semibold">{userRow.name}</td> </> )}
+                                        <td className="px-4 py-3 border border-gray-300">{cert.name}</td>
+                                        <td className="px-4 py-3 border border-gray-300 text-center">{cert.credits}</td>
+                                        {certIndex === 0 && ( <td rowSpan={userRow.certificates.length} className="px-4 py-3 border border-gray-300 text-center align-top font-bold">{userRow.totalCredits}</td> )}
+                                    </tr>
+                                ))
+                            )}
+                        </tbody>
+                    </table>
+                </div>
+              </>
             );
         }
 
         return (
-            <table className="min-w-full bg-white border border-gray-300 border-collapse">
-                <thead className="bg-gray-50">
-                    <tr>
-                        <th className="px-4 py-3 text-left text-sm font-medium text-gray-500 uppercase tracking-wider border border-gray-300 w-12">STT</th>
-                        {Object.values(headers).map((value: any, index) => <th key={index} className="px-4 py-3 text-left text-sm font-medium text-gray-500 uppercase tracking-wider border border-gray-300">{value}</th>)}
-                    </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-200">
-                    {data.map((row: any, index) => (
-                        <tr key={row.id} className="hover:bg-gray-50">
-                            <td className="px-4 py-3 border border-gray-300 text-center">{index + 1}</td>
-                            {Object.keys(headers).map(key => <td key={key} className="px-4 py-3 border border-gray-300 align-top">{renderCellContent(row, key)}</td>)}
+            <div className="overflow-x-auto">
+                <table className="min-w-full bg-white border border-gray-300 border-collapse">
+                    <thead className="bg-gray-50">
+                        <tr>
+                            <th className="px-4 py-3 text-left text-sm font-medium text-gray-500 uppercase tracking-wider border border-gray-300 w-12">STT</th>
+                            {Object.values(headers).map((value: any, index) => <th key={index} className="px-4 py-3 text-left text-sm font-medium text-gray-500 uppercase tracking-wider border border-gray-300">{value}</th>)}
                         </tr>
-                    ))}
-                </tbody>
-            </table>
+                    </thead>
+                    <tbody className="divide-y divide-gray-200">
+                        {data.map((row: any, index) => (
+                            <tr key={row.id} className="hover:bg-gray-50">
+                                <td className="px-4 py-3 border border-gray-300 text-center">{index + 1}</td>
+                                {Object.keys(headers).map(key => <td key={key} className="px-4 py-3 border border-gray-300 align-top">{renderCellContent(row, key)}</td>)}
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
         );
     };
     
@@ -179,7 +206,7 @@ const SharedReportView: React.FC<SharedReportViewProps> = ({ shareId }) => {
                         </button>
                     </div>
                 </header>
-                <main id="report-content" className="bg-white p-6 rounded-lg shadow-md">
+                <main id="report-content" className="bg-white p-0 md:p-6 rounded-lg md:shadow-md">
                     {renderReportTable()}
                 </main>
                 <footer className="text-center text-gray-500 mt-8 text-sm">
