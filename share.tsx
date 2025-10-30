@@ -3,12 +3,20 @@ import ReactDOM from 'react-dom/client';
 import { db } from './firebase';
 import { doc, getDoc } from 'firebase/firestore';
 import PrintIcon from './components/icons/PrintIcon';
+import CertificateDetailModal from './components/CertificateDetailModal';
 
 // Interfaces
 interface ComplianceReportRow { id: string; name: string; title: string; totalCredits: number; requirement: number; status: 'Đã đạt' | 'Chưa đạt'; }
 interface SummaryReportRow { id: string; name: string; title: string; department: string; totalCredits: number; departmentId?: string; titleId?: string; }
 interface DetailedReportRow { id: string; name: string; certificates: { name: string; credits: number }[]; totalCredits: number; }
-type ReportRow = ComplianceReportRow | SummaryReportRow | DetailedReportRow;
+interface SummaryWithDetailsRow {
+    id: string;
+    name: string;
+    totalCredits: number;
+    certificates: { name: string, credits: number }[];
+}
+type ReportRow = ComplianceReportRow | SummaryReportRow | DetailedReportRow | SummaryWithDetailsRow;
+
 
 interface SharedReportData {
     reportTitle: string;
@@ -25,6 +33,7 @@ const SharedReportView: React.FC = () => {
     const [report, setReport] = useState<SharedReportData | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const [detailModalUser, setDetailModalUser] = useState<SummaryWithDetailsRow | null>(null);
 
     useEffect(() => {
         const fetchReport = async () => {
@@ -96,6 +105,17 @@ const SharedReportView: React.FC = () => {
     }, [report]);
 
     const renderCellContent = (row: ReportRow, key: string): ReactNode => {
+        if (key === 'actions' && reportType === 'summary_with_details') {
+            return (
+                <button
+                    onClick={() => setDetailModalUser(row as SummaryWithDetailsRow)}
+                    className="text-teal-600 font-semibold hover:underline"
+                >
+                    Xem
+                </button>
+            );
+        }
+        
         const value = row[key as keyof ReportRow];
         if (key === 'status' && 'status' in row) {
             const status = row.status;
@@ -182,6 +202,12 @@ const SharedReportView: React.FC = () => {
             <footer className="text-center text-gray-500 mt-8 text-sm">
                 <p>Hệ thống Quản lý Đào tạo Liên tục</p>
             </footer>
+            {detailModalUser && (
+                <CertificateDetailModal
+                    user={detailModalUser}
+                    onClose={() => setDetailModalUser(null)}
+                />
+            )}
         </div>
     );
 };

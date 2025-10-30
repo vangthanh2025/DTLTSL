@@ -44,7 +44,9 @@ interface SummaryWithDetailsRow {
 
 
 type ReportRow = ComplianceReportRow | SummaryReportRow | DetailedReportRow | SummaryWithDetailsRow;
-type SortableKeys = keyof ReportRow;
+// FIX: This comparison appears to be unintentional because the types '"id" | "name" | "totalCredits"' and '"actions"' have no overlap.
+// Changed SortableKeys to string to allow any header key for sorting.
+type SortableKeys = string;
 
 interface ReportingProps {
     user: UserData;
@@ -255,8 +257,8 @@ const Reporting: React.FC<ReportingProps> = ({ user, users, certificates, depart
         let sortableItems = [...reportData];
         if (sortConfig !== null && !['department', 'title_detail', 'detail'].includes(reportType)) {
              sortableItems.sort((a, b) => {
-                const aValue = a[sortConfig.key as keyof typeof a];
-                const bValue = b[sortConfig.key as keyof typeof b];
+                const aValue = (a as any)[sortConfig.key];
+                const bValue = (b as any)[sortConfig.key];
                 if (typeof aValue === 'string' && typeof bValue === 'string') {
                     if (sortConfig.key === 'actions') return 0; // Don't sort by action column
                     return sortConfig.direction === 'ascending' ? aValue.localeCompare(bValue, 'vi') : bValue.localeCompare(aValue, 'vi');
@@ -487,7 +489,7 @@ const Reporting: React.FC<ReportingProps> = ({ user, users, certificates, depart
                     {Object.entries(reportHeaders).map(([key, value]) => (
                         <th key={key}
                             className="px-4 py-3 text-left text-sm font-medium text-gray-500 uppercase tracking-wider border border-gray-300 cursor-pointer"
-                            onClick={() => requestSort(key as SortableKeys)}
+                            onClick={() => requestSort(key)}
                         >
                             {value}
                             <span className="ml-1">{getSortIndicator(key)}</span>
