@@ -17,6 +17,7 @@ interface SharedReportData {
     createdAt: { toDate: () => Date };
     expiresAt: { toDate: () => Date };
     createdBy: string;
+    token?: string;
 }
 
 interface SharedReportViewProps {
@@ -30,6 +31,9 @@ const SharedReportView: React.FC<SharedReportViewProps> = ({ shareId }) => {
 
     useEffect(() => {
         const fetchReport = async () => {
+            const urlParams = new URLSearchParams(window.location.search);
+            const urlToken = urlParams.get('token');
+
             if (!shareId) {
                 setError("Không tìm thấy ID báo cáo.");
                 setLoading(false);
@@ -47,6 +51,12 @@ const SharedReportView: React.FC<SharedReportViewProps> = ({ shareId }) => {
                 }
 
                 const data = reportSnap.data() as SharedReportData;
+
+                if (data.token && data.token !== urlToken) {
+                    setError("Truy cập trực tiếp qua liên kết không được phép. Vui lòng quét mã QR để xem báo cáo.");
+                    setLoading(false);
+                    return;
+                }
 
                 if (new Date() > data.expiresAt.toDate()) {
                     setError("Liên kết báo cáo này đã hết hạn.");

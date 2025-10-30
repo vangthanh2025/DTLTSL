@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { db } from '../firebase';
-import { collection, getDocs, doc, deleteDoc, addDoc, updateDoc } from 'firebase/firestore';
+import { collection, getDocs, doc, deleteDoc, addDoc, updateDoc, Timestamp } from 'firebase/firestore';
 import { UserData, Department, Title, GeminiKey } from '../App';
 import PencilIcon from '../components/icons/PencilIcon';
 import TrashIcon from '../components/icons/TrashIcon';
@@ -9,6 +9,8 @@ import UserAddModal from '../components/UserAddModal';
 import UserEditModal from '../components/UserEditModal';
 import ConfirmDeleteModal from '../components/ConfirmDeleteModal';
 import { GoogleGenAI } from '@google/genai';
+import QRIcon from '../components/icons/QRIcon';
+import UpdateExpirationModal from '../components/UpdateExpirationModal';
 
 interface AdministrationProps {
     departments: Department[];
@@ -16,6 +18,15 @@ interface AdministrationProps {
     onKeysUpdate: () => void;
     onDepartmentsUpdate: () => void;
     onTitlesUpdate: () => void;
+}
+
+interface SharedReport {
+  id: string;
+  reportTitle: string;
+  createdAt: { toDate: () => Date };
+  expiresAt: { toDate: () => Date };
+  createdBy: string;
+  token: string;
 }
 
 const roleNames: { [key: string]: string } = {
@@ -72,6 +83,12 @@ const Administration: React.FC<AdministrationProps> = ({ departments, titles, on
     const [editingItem, setEditingItem] = useState<{ type: 'department' | 'title', id: string } | null>(null);
     const [editedName, setEditedName] = useState('');
     const [deletingItem, setDeletingItem] = useState<{ type: 'department' | 'title', item: Department | Title } | null>(null);
+    
+    // QR Management State
+    const [sharedReports, setSharedReports] = useState<SharedReport[]>([]);
+    const [editingExpirationReport, setEditingExpirationReport] = useState<SharedReport | null>(null);
+    const [deletingSharedReport, setDeletingSharedReport] = useState<SharedReport | null>(null);
+
 
     const departmentMap = new Map(departments.map(dept => [dept.id, dept.name]));
     const titleMap = new Map(titles.map(title => [title.id, title.name]));
@@ -80,11 +97,12 @@ const Administration: React.FC<AdministrationProps> = ({ departments, titles, on
         const fetchAllData = async () => {
             setLoading(true); setSettingsLoading(true); setKeyLoading(true);
             try {
-                // Fetch Users, Settings, and Keys
-                const [userSnapshot, settingsSnapshot, keysSnapshot] = await Promise.all([
+                // Fetch Users, Settings, Keys, and Shared Reports
+                const [userSnapshot, settingsSnapshot, keysSnapshot, sharedReportsSnapshot] = await Promise.all([
                     getDocs(collection(db, 'Users')),
                     getDocs(collection(db, 'Settings')),
-                    getDocs(collection(db, 'KeyGemini'))
+                    getDocs(collection(db, 'KeyGemini')),
+                    getDocs(collection(db, 'SharedReports'))
                 ]);
                 
                 const userList: UserData[] = [];
@@ -120,6 +138,10 @@ const Administration: React.FC<AdministrationProps> = ({ departments, titles, on
 
                 const keyList = keysSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as GeminiKey));
                 setGeminiKeys(keyList);
+
+                const reportList = sharedReportsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as SharedReport));
+                reportList.sort((a, b) => b.createdAt.toDate().getTime() - a.createdAt.toDate().getTime());
+                setSharedReports(reportList);
 
             } catch (err) {
                 console.error("Error fetching data: ", err);
@@ -298,6 +320,32 @@ const Administration: React.FC<AdministrationProps> = ({ departments, titles, on
         } catch (err) { console.error(`Error deleting ${deletingItem.type}:`, err); }
     };
 
+    // --- QR Management ---
+    const handleUpdateExpiration = async (report: SharedReport, newExpiresAt: Date) => {
+        try {
+            const reportRef = doc(db, 'SharedReports', report.id);
+            await updateDoc(reportRef, { expiresAt: Timestamp.fromDate(newExpiresAt) });
+            setSharedReports(prev => prev.map(r => 
+                r.id === report.id ? { ...r, expiresAt: { toDate: () => newExpiresAt } } : r
+            ));
+            setEditingExpirationReport(null);
+        } catch (err) {
+            console.error("Error updating expiration date:", err);
+            // Optionally, show an error to the user
+        }
+    };
+
+    const handleDeleteSharedReport = async () => {
+        if (!deletingSharedReport) return;
+        try {
+            await deleteDoc(doc(db, 'SharedReports', deletingSharedReport.id));
+            setSharedReports(prev => prev.filter(r => r.id !== deletingSharedReport.id));
+            setDeletingSharedReport(null);
+        } catch (err) {
+            console.error("Error deleting shared report:", err);
+        }
+    };
+
     const maskKey = (key: string) => key.length < 16 ? '***' : `${key.substring(0, 8)}...${key.substring(key.length - 8)}`;
 
     const renderUserManagement = () => (
@@ -405,6 +453,45 @@ const Administration: React.FC<AdministrationProps> = ({ departments, titles, on
             </div>
         </div>
     );
+    
+    const renderQRManagement = () => (
+        <div className="bg-white p-6 rounded-lg shadow-md mt-6">
+            <h3 className="text-lg font-semibold text-gray-800 mb-4">Quản lý Báo cáo đã chia sẻ</h3>
+            <div className="overflow-x-auto">
+                <table className="min-w-full bg-white">
+                    <thead className="bg-gray-50">
+                        <tr>
+                            <th className="px-6 py-3 text-left text-sm font-medium text-gray-500 uppercase tracking-wider">Tên Báo cáo</th>
+                            <th className="px-6 py-3 text-left text-sm font-medium text-gray-500 uppercase tracking-wider">Người tạo</th>
+                            <th className="px-6 py-3 text-left text-sm font-medium text-gray-500 uppercase tracking-wider">Ngày tạo</th>
+                            <th className="px-6 py-3 text-left text-sm font-medium text-gray-500 uppercase tracking-wider">Ngày hết hạn</th>
+                            <th className="px-6 py-3 text-left text-sm font-medium text-gray-500 uppercase tracking-wider">Hành động</th>
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-200">
+                        {sharedReports.map(report => (
+                            <tr key={report.id} className="hover:bg-gray-50">
+                                <td className="px-6 py-4 whitespace-nowrap text-base font-medium text-gray-900">{report.reportTitle}</td>
+                                <td className="px-6 py-4 whitespace-nowrap text-base text-gray-500">{report.createdBy}</td>
+                                <td className="px-6 py-4 whitespace-nowrap text-base text-gray-500">{report.createdAt.toDate().toLocaleDateString('vi-VN')}</td>
+                                <td className="px-6 py-4 whitespace-nowrap text-base text-gray-500">{report.expiresAt.toDate().toLocaleDateString('vi-VN')}</td>
+                                <td className="px-6 py-4 whitespace-nowrap text-base font-medium">
+                                    <button onClick={() => setEditingExpirationReport(report)} className="text-teal-600 hover:text-teal-900 mr-4" title="Sửa hạn"><PencilIcon className="h-5 w-5" /></button>
+                                    <button onClick={() => setDeletingSharedReport(report)} className="text-red-600 hover:text-red-900" title="Xóa"><TrashIcon className="h-5 w-5" /></button>
+                                </td>
+                            </tr>
+                        ))}
+                         {sharedReports.length === 0 && (
+                            <tr>
+                                <td colSpan={5} className="text-center py-8 text-gray-500">Chưa có báo cáo nào được chia sẻ.</td>
+                            </tr>
+                        )}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    );
+
 
     if (loading || settingsLoading || keyLoading) return <div className="text-center p-8">Đang tải dữ liệu quản trị...</div>;
     if (error) return <div className="text-center p-8 text-red-600">{error}</div>;
@@ -416,6 +503,7 @@ const Administration: React.FC<AdministrationProps> = ({ departments, titles, on
                 <nav className="-mb-px flex flex-wrap gap-x-8 gap-y-2" aria-label="Tabs">
                     <button onClick={() => setActiveTab('userManagement')} className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-base ${activeTab === 'userManagement' ? 'border-teal-500 text-teal-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}>Tài khoản</button>
                     <button onClick={() => setActiveTab('categoryManagement')} className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-base ${activeTab === 'categoryManagement' ? 'border-teal-500 text-teal-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}>Danh mục</button>
+                    <button onClick={() => setActiveTab('qrManagement')} className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-base ${activeTab === 'qrManagement' ? 'border-teal-500 text-teal-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}>Quản lý QR</button>
                     <button onClick={() => setActiveTab('geminiKeyManagement')} className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-base ${activeTab === 'geminiKeyManagement' ? 'border-teal-500 text-teal-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}>Quản lý API</button>
                     <button onClick={() => setActiveTab('settings')} className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-base ${activeTab === 'settings' ? 'border-teal-500 text-teal-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}>Cài đặt</button>
                 </nav>
@@ -423,6 +511,7 @@ const Administration: React.FC<AdministrationProps> = ({ departments, titles, on
             
             {activeTab === 'userManagement' && renderUserManagement()}
             {activeTab === 'categoryManagement' && renderCategoryManagement()}
+            {activeTab === 'qrManagement' && renderQRManagement()}
             {activeTab === 'geminiKeyManagement' && renderKeyManagement()}
             {activeTab === 'settings' && renderSettingsTab()}
 
@@ -431,6 +520,8 @@ const Administration: React.FC<AdministrationProps> = ({ departments, titles, on
             {deletingUser && <ConfirmDeleteModal message={`Bạn có chắc chắn muốn xóa người dùng "${deletingUser.name}"?`} onConfirm={handleDeleteUser} onClose={() => setDeletingUser(null)} />}
             {deletingKey && <ConfirmDeleteModal message={`Bạn có chắc chắn muốn xóa API Key "${maskKey(deletingKey.key)}"?`} onConfirm={handleDeleteKey} onClose={() => setDeletingKey(null)} />}
             {deletingItem && <ConfirmDeleteModal message={`Bạn có chắc chắn muốn xóa "${deletingItem.item.name}"?`} onConfirm={handleConfirmDelete} onClose={() => setDeletingItem(null)} />}
+            {editingExpirationReport && <UpdateExpirationModal report={editingExpirationReport} onSave={handleUpdateExpiration} onClose={() => setEditingExpirationReport(null)} />}
+            {deletingSharedReport && <ConfirmDeleteModal message={`Bạn có chắc chắn muốn xóa link chia sẻ cho báo cáo "${deletingSharedReport.reportTitle}" không?`} onConfirm={handleDeleteSharedReport} onClose={() => setDeletingSharedReport(null)} />}
             
             <style>{`
                 .input-style { box-sizing: border-box; width: 100%; padding: 0.5rem 0.75rem; border: 1px solid #D1D5DB; border-radius: 0.375rem; box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05); }

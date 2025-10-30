@@ -5,12 +5,13 @@ import CheckIcon from './icons/CheckIcon';
 interface ShareReportModalProps {
     shareUrl: string;
     expiresAt: Date;
+    token: string;
     onClose: () => void;
 }
 
-const ShareReportModal: React.FC<ShareReportModalProps> = ({ shareUrl, expiresAt, onClose }) => {
+const ShareReportModal: React.FC<ShareReportModalProps> = ({ shareUrl, expiresAt, token, onClose }) => {
     const [copied, setCopied] = useState(false);
-    const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(shareUrl)}`;
+    const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(`${shareUrl}&token=${token}`)}`;
 
     const handleCopy = () => {
         navigator.clipboard.writeText(shareUrl).then(() => {

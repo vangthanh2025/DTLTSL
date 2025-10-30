@@ -208,7 +208,7 @@ const Statistics: React.FC<StatisticsProps> = ({ users, certificates, settings }
 
         const totalCerts = certsInCycle.length;
         // FIX: Add explicit types to reduce callback parameters to ensure correct type inference for credit summation.
-        const totalCreditsInCycle = certsInCycle.reduce((sum: number, cert) => sum + cert.credits, 0);
+        const totalCreditsInCycle = certsInCycle.reduce((sum: number, cert: Certificate) => sum + cert.credits, 0);
         const averageCredits = totalUsers > 0 ? (totalCreditsInCycle / totalUsers).toFixed(1) : '0.0';
 
         let compliantUsers = 0;

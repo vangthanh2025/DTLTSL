@@ -60,7 +60,7 @@ const Reporting: React.FC<ReportingProps> = ({ user, users, certificates, depart
     const [reportData, setReportData] = useState<ReportRow[] | null>(null);
     const [reportHeaders, setReportHeaders] = useState<Record<string, string>>({});
     const [sortConfig, setSortConfig] = useState<{ key: SortableKeys; direction: 'ascending' | 'descending' } | null>(null);
-    const [shareModalInfo, setShareModalInfo] = useState<{ url: string; expiresAt: Date } | null>(null);
+    const [shareModalInfo, setShareModalInfo] = useState<{ url: string; expiresAt: Date; token: string; } | null>(null);
 
 
     const titleMap = useMemo(() => new Map(titles.map(t => [t.id, t.name])), [titles]);
@@ -258,6 +258,7 @@ const Reporting: React.FC<ReportingProps> = ({ user, users, certificates, depart
         };
 
         const reportTitle = reportTitleOptions[reportType] || 'Báo cáo Tùy chỉnh';
+        const token = Math.random().toString(36).substring(2, 12);
         const now = new Date();
         const expiresAt = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000); // 7 days expiration
 
@@ -269,12 +270,13 @@ const Reporting: React.FC<ReportingProps> = ({ user, users, certificates, depart
             createdAt: Timestamp.fromDate(now),
             expiresAt: Timestamp.fromDate(expiresAt),
             createdBy: user.name,
+            token: token,
         };
 
         try {
             const docRef = await addDoc(collection(db, 'SharedReports'), sharePayload);
             const shareUrl = `${window.location.origin}/?id=${docRef.id}`;
-            setShareModalInfo({ url: shareUrl, expiresAt });
+            setShareModalInfo({ url: shareUrl, expiresAt, token });
         } catch (error) {
             console.error("Error creating share link:", error);
             alert("Đã xảy ra lỗi khi tạo liên kết chia sẻ. Vui lòng thử lại.");
@@ -605,6 +607,7 @@ const Reporting: React.FC<ReportingProps> = ({ user, users, certificates, depart
                 <ShareReportModal
                     shareUrl={shareModalInfo.url}
                     expiresAt={shareModalInfo.expiresAt}
+                    token={shareModalInfo.token}
                     onClose={() => setShareModalInfo(null)}
                 />
             )}
