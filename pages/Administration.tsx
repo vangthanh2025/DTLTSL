@@ -91,6 +91,7 @@ const Administration: React.FC<AdministrationProps> = ({ departments, titles, on
     const [editingExpirationReport, setEditingExpirationReport] = useState<SharedReport | null>(null);
     const [deletingSharedReport, setDeletingSharedReport] = useState<SharedReport | null>(null);
     const [viewingQRReport, setViewingQRReport] = useState<SharedReport | null>(null);
+    const [isConfirmingDeleteAll, setIsConfirmingDeleteAll] = useState(false);
 
 
     const departmentMap = new Map(departments.map(dept => [dept.id, dept.name]));
@@ -349,6 +350,21 @@ const Administration: React.FC<AdministrationProps> = ({ departments, titles, on
         }
     };
 
+    const handleDeleteAllSharedReports = async () => {
+        if (sharedReports.length === 0) return;
+        try {
+            await Promise.all(
+                sharedReports.map(report => deleteDoc(doc(db, 'SharedReports', report.id)))
+            );
+            setSharedReports([]);
+            setIsConfirmingDeleteAll(false);
+        } catch (err) {
+            console.error("Error deleting all shared reports:", err);
+            alert("Đã xảy ra lỗi khi xóa tất cả báo cáo. Vui lòng thử lại.");
+            setIsConfirmingDeleteAll(false);
+        }
+    };
+
     const maskKey = (key: string) => key.length < 16 ? '***' : `${key.substring(0, 8)}...${key.substring(key.length - 8)}`;
 
     const renderUserManagement = () => (
@@ -459,7 +475,18 @@ const Administration: React.FC<AdministrationProps> = ({ departments, titles, on
     
     const renderQRManagement = () => (
         <div className="bg-white p-6 rounded-lg shadow-md mt-6">
-            <h3 className="text-lg font-semibold text-gray-800 mb-4">Quản lý Báo cáo đã chia sẻ</h3>
+            <div className="flex justify-between items-center mb-4">
+                <h3 className="text-lg font-semibold text-gray-800">Quản lý Báo cáo đã chia sẻ</h3>
+                {sharedReports.length > 0 && (
+                    <button
+                        onClick={() => setIsConfirmingDeleteAll(true)}
+                        className="bg-red-600 text-white font-semibold py-2 px-4 rounded-lg flex items-center justify-center gap-2 hover:bg-red-700 transition-colors"
+                    >
+                        <TrashIcon className="h-5 w-5" />
+                        <span>Xóa tất cả</span>
+                    </button>
+                )}
+            </div>
             <div className="overflow-x-auto">
                 <table className="min-w-full bg-white">
                     <thead className="bg-gray-50">
@@ -526,6 +553,13 @@ const Administration: React.FC<AdministrationProps> = ({ departments, titles, on
             {deletingItem && <ConfirmDeleteModal message={`Bạn có chắc chắn muốn xóa "${deletingItem.item.name}"?`} onConfirm={handleConfirmDelete} onClose={() => setDeletingItem(null)} />}
             {editingExpirationReport && <UpdateExpirationModal report={editingExpirationReport} onSave={handleUpdateExpiration} onClose={() => setEditingExpirationReport(null)} />}
             {deletingSharedReport && <ConfirmDeleteModal message={`Bạn có chắc chắn muốn xóa link chia sẻ cho báo cáo "${deletingSharedReport.reportTitle}" không?`} onConfirm={handleDeleteSharedReport} onClose={() => setDeletingSharedReport(null)} />}
+            {isConfirmingDeleteAll && (
+                <ConfirmDeleteModal
+                    message={`Bạn có chắc chắn muốn xóa TẤT CẢ ${sharedReports.length} báo cáo đã chia sẻ không? Hành động này không thể hoàn tác.`}
+                    onConfirm={handleDeleteAllSharedReports}
+                    onClose={() => setIsConfirmingDeleteAll(false)}
+                />
+            )}
             {viewingQRReport && (
                 <ShareReportModal
                     shareUrl={`${window.location.origin}/?id=${viewingQRReport.id}`}
