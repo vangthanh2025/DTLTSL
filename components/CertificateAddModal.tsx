@@ -248,7 +248,7 @@ Hướng dẫn chi tiết: Trích xuất tiêu đề chính (name), ngày kết 
                     <div className="flex items-center gap-3">
                         <button type="button" onClick={() => fileInputRef.current?.click()} disabled={isProcessing} className="flex-1 btn-secondary-outline justify-center gap-2">
                             <UploadIcon className="h-5 w-5" />
-                            Chọn từ tệp
+                            Chọn ảnh
                         </button>
                         <button type="button" onClick={() => setIsCameraOpen(true)} disabled={isProcessing} className="flex-1 btn-secondary-outline justify-center gap-2">
                            <CameraIcon className="h-5 w-5" />

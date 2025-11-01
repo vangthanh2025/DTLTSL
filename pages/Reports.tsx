@@ -6,6 +6,7 @@ import Statistics from './Statistics';
 import Reporting from './Reporting';
 import Inspection from './Inspection';
 import { deleteFromDrive, extractFileIdFromUrl } from '../utils/driveUploader';
+import { logAction } from '../utils/logger';
 
 
 interface ReportsProps {
@@ -105,6 +106,13 @@ const Reports: React.FC<ReportsProps> = ({ user, settings, departments, titles, 
             setCertificates(prev => 
                 prev.map(c => c.id === originalCert.id ? updatedCertForState : c)
             );
+            
+            const targetUser = users.find(u => u.id === originalCert.userId);
+            await logAction(user, 'CERTIFICATE_UPDATE_ADMIN', 
+              { type: 'Certificate', id: originalCert.id, name: updatedData.name || originalCert.name },
+              { targetUser: targetUser?.name, changes: updatedData }
+            );
+
         } catch (err) {
             console.error("Error updating certificate from Reports page:", err);
             // Optionally, set an error state to show in the UI
@@ -124,6 +132,15 @@ const Reports: React.FC<ReportsProps> = ({ user, settings, departments, titles, 
             const certDocRef = doc(db, 'Certificates', certId);
             await deleteDoc(certDocRef);
             setCertificates(prevCerts => prevCerts.filter(c => c.id !== certId));
+
+            if (certToDelete) {
+                const targetUser = users.find(u => u.id === certToDelete.userId);
+                await logAction(user, 'CERTIFICATE_DELETE_ADMIN', 
+                  { type: 'Certificate', id: certId, name: certToDelete.name },
+                  { targetUser: targetUser?.name }
+                );
+            }
+
         } catch (err) {
             console.error("Error deleting certificate from Reports page:", err);
         }
@@ -137,7 +154,7 @@ const Reports: React.FC<ReportsProps> = ({ user, settings, departments, titles, 
             case 'Thống kê':
                 return <Statistics users={users} certificates={certificates} settings={settings} />;
             case 'Báo cáo':
-                return <Reporting user={user} users={users} certificates={certificates} departments={departments} titles={titles} settings={settings} />;
+                return <Reporting user={user} users={users} certificates={certificates} departments={departments} titles={titles} settings={settings} geminiApiKey={geminiApiKey} />;
             case 'Kiểm tra':
                 return <Inspection 
                             currentUser={user}

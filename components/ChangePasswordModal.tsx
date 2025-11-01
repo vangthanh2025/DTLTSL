@@ -1,4 +1,5 @@
 
+
 import React, { useState } from 'react';
 import { UserData } from '../App';
 import { db } from '../firebase';
@@ -6,6 +7,7 @@ import { doc, getDoc, updateDoc } from 'firebase/firestore';
 import CloseIcon from './icons/CloseIcon';
 import EyeIcon from './icons/EyeIcon';
 import EyeOffIcon from './icons/EyeOffIcon';
+import { logAction } from '../utils/logger';
 
 interface ChangePasswordModalProps {
   user: UserData;
@@ -68,6 +70,9 @@ const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({ user, onClose
       await updateDoc(userDocRef, { password: newPassword });
       setSuccess('Đổi mật khẩu thành công!');
       
+      // Log the action
+      await logAction(user, 'USER_PASSWORD_CHANGE', { type: 'User', id: user.id, name: user.name });
+
       // Clear fields and close modal after a delay
       setTimeout(() => {
         onClose();

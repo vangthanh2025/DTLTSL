@@ -6,6 +6,7 @@ import CameraIcon from './icons/CameraIcon';
 import { GoogleGenAI, GenerateContentResponse } from '@google/genai';
 import CameraModal from './CameraModal';
 import { uploadToDrive, transformGoogleDriveUrl, blobToBase64, deleteFromDrive } from '../utils/driveUploader';
+import SparklesIcon from './icons/SparklesIcon';
 
 interface CertificateEditModalProps {
   user: UserData;
@@ -31,6 +32,11 @@ const CertificateEditModal: React.FC<CertificateEditModalProps> = ({ user, certi
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isClosing, setIsClosing] = useState(false);
 
+  const [isReExtracting, setIsReExtracting] = useState(false);
+  const [cooldown, setCooldown] = useState(0);
+  // FIX: Changed NodeJS.Timeout to number for browser compatibility.
+  const cooldownTimerRef = useRef<number | null>(null);
+
   useEffect(() => {
     setFormData({
       name: certificate.name || '',
@@ -42,6 +48,25 @@ const CertificateEditModal: React.FC<CertificateEditModalProps> = ({ user, certi
         setImagePreviewUrl(transformGoogleDriveUrl(certificate.imageUrl));
     }
   }, [certificate]);
+
+  useEffect(() => {
+    if (cooldown > 0) {
+      cooldownTimerRef.current = setTimeout(() => {
+        setCooldown(cooldown - 1);
+      }, 1000);
+    }
+    return () => {
+      if (cooldownTimerRef.current) {
+        clearTimeout(cooldownTimerRef.current);
+      }
+    };
+  }, [cooldown]);
+
+  const startCooldown = () => {
+    if (cooldownTimerRef.current) clearTimeout(cooldownTimerRef.current);
+    setCooldown(30);
+  };
+
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
@@ -104,15 +129,92 @@ const CertificateEditModal: React.FC<CertificateEditModalProps> = ({ user, certi
     }
   };
 
+  const extractDataWithAI = async (imageBlob: Blob) => {
+    if (!geminiApiKey) {
+        throw new Error("Chưa cấu hình API Key. Vui lòng liên hệ quản trị viên.");
+    }
+    
+    const base64Data = await blobToBase64(imageBlob);
+    const ai = new GoogleGenAI({ apiKey: geminiApiKey });
+    const systemInstruction = `Vai trò: Bạn là một AI chuyên gia trích xuất dữ liệu, được đào tạo đặc biệt để phân tích hình ảnh chứng chỉ đào tạo y khoa liên tục (CME/CPD) bằng tiếng Việt.
+Nhiệm vụ: Nhiệm vụ của bạn là trích xuất chính xác các thông tin cụ thể từ hình ảnh chứng chỉ được cung cấp và trả về dưới dạng một đối tượng JSON.
+Đầu ra: Chỉ trả về một đối tượng JSON hợp lệ theo cấu trúc sau. TUYỆT ĐỐI không thêm bất kỳ văn bản giải thích, lời chào đầu/kết hay định dạng markdown nào khác.
+\`\`\`json
+{
+  "name": "string | null",
+  "date": "string (YYYY-MM-DD) | null",
+  "credits": "number | null"
+}
+\`\`\`
+Hướng dẫn chi tiết: Trích xuất tiêu đề chính (name), ngày kết thúc sự kiện (date), và số tiết học (credits). Luôn trả về ngày theo định dạng YYYY-MM-DD. Nếu không chắc, trả về null.`;
+
+    const genAIResponse: GenerateContentResponse = await ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: [ { parts: [{ inlineData: { mimeType: imageBlob.type, data: base64Data } }] } ],
+        config: { responseMimeType: "application/json", systemInstruction }
+    });
+    
+    const responseText = genAIResponse.text.trim();
+    if (!responseText || responseText.toLowerCase() === 'null') {
+        throw new Error("AI returned an empty or null response.");
+    }
+    
+    const extractedData = JSON.parse(responseText);
+    let dataExtracted = false;
+
+    if (extractedData) {
+        const updates: Partial<typeof formData> = {};
+
+        if (extractedData.name && typeof extractedData.name === 'string' && extractedData.name.toLowerCase() !== 'null') {
+            updates.name = extractedData.name;
+            dataExtracted = true;
+        }
+        if (extractedData.credits && typeof extractedData.credits === 'number') {
+            updates.credits = extractedData.credits.toString();
+            dataExtracted = true;
+        }
+        if (extractedData.date && typeof extractedData.date === 'string') {
+            updates.date = extractedData.date;
+            dataExtracted = true;
+        }
+        
+        if (Object.keys(updates).length > 0) {
+            setFormData(prev => ({ ...prev, ...updates }));
+        }
+        
+        if (!dataExtracted) {
+            throw new Error("AI could not extract any valid information.");
+        }
+    }
+  };
+
+  const handleReExtract = async () => {
+    if (isProcessing || isReExtracting || cooldown > 0 || !imagePreviewUrl) return;
+
+    setIsReExtracting(true);
+    setProcessingMessage('Đang trích xuất lại...');
+    setErrors({});
+
+    try {
+        const response = await fetch(imagePreviewUrl);
+        if (!response.ok) throw new Error(`Không thể tải lại ảnh: ${response.statusText}`);
+        const imageBlob = await response.blob();
+        await extractDataWithAI(imageBlob);
+    } catch (error) {
+        console.error("Error re-extracting image data:", error);
+        setErrors(prev => ({ ...prev, imageUrl: error instanceof Error ? error.message : 'Không thể trích xuất lại dữ liệu. Vui lòng nhập thủ công.' }));
+    } finally {
+        setIsReExtracting(false);
+        setProcessingMessage('');
+        startCooldown();
+    }
+  };
+
+
    const processNewImage = async (imageBlob: Blob) => {
     const MAX_FILE_SIZE_MB = 10;
     if (imageBlob.size > MAX_FILE_SIZE_MB * 1024 * 1024) {
         setErrors(prev => ({ ...prev, imageUrl: `Lỗi: Kích thước tệp quá lớn (tối đa ${MAX_FILE_SIZE_MB}MB).` }));
-        return;
-    }
-
-    if (!geminiApiKey) {
-        setErrors(prev => ({ ...prev, imageUrl: "Lỗi: Chưa cấu hình API Key. Vui lòng liên hệ quản trị viên."}));
         return;
     }
 
@@ -142,65 +244,15 @@ const CertificateEditModal: React.FC<CertificateEditModalProps> = ({ user, certi
         if (errors.imageUrl) setErrors(prev => ({ ...prev, imageUrl: '' }));
 
         setProcessingMessage('Đang trích xuất dữ liệu...');
-        const base64Data = await blobToBase64(imageBlob);
-        const ai = new GoogleGenAI({ apiKey: geminiApiKey });
-        
-        const systemInstruction = `Vai trò: Bạn là một AI chuyên gia trích xuất dữ liệu, được đào tạo đặc biệt để phân tích hình ảnh chứng chỉ đào tạo y khoa liên tục (CME/CPD) bằng tiếng Việt.
-Nhiệm vụ: Nhiệm vụ của bạn là trích xuất chính xác các thông tin cụ thể từ hình ảnh chứng chỉ được cung cấp và trả về dưới dạng một đối tượng JSON.
-Đầu ra: Chỉ trả về một đối tượng JSON hợp lệ theo cấu trúc sau. TUYỆT ĐỐI không thêm bất kỳ văn bản giải thích, lời chào đầu/kết hay định dạng markdown nào khác.
-\`\`\`json
-{
-  "name": "string | null",
-  "date": "string (YYYY-MM-DD) | null",
-  "credits": "number | null"
-}
-\`\`\`
-Hướng dẫn chi tiết: Trích xuất tiêu đề chính (name), ngày kết thúc sự kiện (date), và số tiết học (credits). Luôn trả về ngày theo định dạng YYYY-MM-DD. Nếu không chắc, trả về null.`;
+        await extractDataWithAI(imageBlob);
 
-        const genAIResponse: GenerateContentResponse = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: [ { parts: [{ inlineData: { mimeType: imageBlob.type, data: base64Data } }] } ],
-            config: { responseMimeType: "application/json", systemInstruction }
-        });
-        
-        const responseText = genAIResponse.text.trim();
-        if (!responseText || responseText.toLowerCase() === 'null') {
-            throw new Error("AI returned an empty or null response.");
-        }
-        
-        const extractedData = JSON.parse(responseText);
-        let dataExtracted = false;
-
-        if (extractedData) {
-            const updates: Partial<typeof formData> = {};
-
-            if (extractedData.name && typeof extractedData.name === 'string' && extractedData.name.toLowerCase() !== 'null') {
-                updates.name = extractedData.name;
-                dataExtracted = true;
-            }
-            if (extractedData.credits && typeof extractedData.credits === 'number') {
-                updates.credits = extractedData.credits.toString();
-                dataExtracted = true;
-            }
-            if (extractedData.date && typeof extractedData.date === 'string') {
-                updates.date = extractedData.date;
-                dataExtracted = true;
-            }
-            
-            if (Object.keys(updates).length > 0) {
-                setFormData(prev => ({ ...prev, ...updates }));
-            }
-            
-            if (!dataExtracted) {
-                throw new Error("AI could not extract any valid information.");
-            }
-        }
     } catch (error) {
         console.error("Error processing image:", error);
-        setErrors(prev => ({ ...prev, imageUrl: 'Phần mềm không lấy được dữ liệu, đề nghị nhập liệu bằng tay.' }));
+        setErrors(prev => ({ ...prev, imageUrl: error instanceof Error ? error.message : 'Phần mềm không lấy được dữ liệu, đề nghị nhập liệu bằng tay.' }));
     } finally {
         setIsProcessing(false);
         setProcessingMessage('');
+        startCooldown();
     }
   };
 
@@ -237,8 +289,8 @@ Hướng dẫn chi tiết: Trích xuất tiêu đề chính (name), ngày kết 
                     <input type="file" ref={fileInputRef} onChange={handleFileChange} accept="image/*" className="hidden" />
                     
                     <div 
-                        onClick={() => !isProcessing && fileInputRef.current?.click()}
-                        className={`relative w-full aspect-[4/3] bg-slate-50 rounded-lg border-2 border-dashed border-slate-300 flex items-center justify-center overflow-hidden text-center transition-colors ${!isProcessing ? 'cursor-pointer hover:bg-slate-100 hover:border-teal-400' : 'cursor-default'}`}
+                        onClick={() => !(isProcessing || isReExtracting) && fileInputRef.current?.click()}
+                        className={`relative w-full aspect-[4/3] bg-slate-50 rounded-lg border-2 border-dashed border-slate-300 flex items-center justify-center overflow-hidden text-center transition-colors ${!(isProcessing || isReExtracting) ? 'cursor-pointer hover:bg-slate-100 hover:border-teal-400' : 'cursor-default'}`}
                         role="button"
                         aria-label="Thay đổi ảnh"
                     >
@@ -250,7 +302,7 @@ Hướng dẫn chi tiết: Trích xuất tiêu đề chính (name), ngày kết 
                                 <p className="text-slate-500 text-base mt-2">Không có hình ảnh</p>
                             </div>
                         )}
-                         {isProcessing && (
+                         {(isProcessing || isReExtracting) && (
                             <div className="absolute inset-0 bg-white/80 flex flex-col items-center justify-center gap-2">
                                 <div className="w-8 h-8 border-4 border-teal-500 border-t-transparent rounded-full animate-spin"></div>
                                 <p className="text-sm font-semibold text-teal-700">{processingMessage}</p>
@@ -259,11 +311,11 @@ Hướng dẫn chi tiết: Trích xuất tiêu đề chính (name), ngày kết 
                     </div>
                     
                     <div className="flex items-center gap-3">
-                        <button type="button" onClick={() => fileInputRef.current?.click()} disabled={isProcessing} className="flex-1 btn-secondary-outline justify-center gap-2">
+                        <button type="button" onClick={() => fileInputRef.current?.click()} disabled={isProcessing || isReExtracting} className="flex-1 btn-secondary-outline justify-center gap-2">
                             <UploadIcon className="h-5 w-5" />
-                            Chọn từ tệp
+                            Chọn ảnh
                         </button>
-                        <button type="button" onClick={() => setIsCameraOpen(true)} disabled={isProcessing} className="flex-1 btn-secondary-outline justify-center gap-2">
+                        <button type="button" onClick={() => setIsCameraOpen(true)} disabled={isProcessing || isReExtracting} className="flex-1 btn-secondary-outline justify-center gap-2">
                            <CameraIcon className="h-5 w-5" />
                            Chụp ảnh
                         </button>
@@ -271,6 +323,22 @@ Hướng dẫn chi tiết: Trích xuất tiêu đề chính (name), ngày kết 
                 </div>
 
                 <form onSubmit={handleSubmit} className="md:col-span-3 space-y-6 flex flex-col">
+                     <div className="flex justify-between items-center">
+                        <h3 className="text-lg font-semibold text-gray-800">Thông tin chứng chỉ</h3>
+                        <button
+                            type="button"
+                            onClick={handleReExtract}
+                            disabled={isProcessing || isReExtracting || cooldown > 0 || !imagePreviewUrl}
+                            className="flex items-center gap-2 text-sm text-teal-600 font-semibold py-1 px-3 rounded-full bg-teal-50 hover:bg-teal-100 disabled:bg-gray-100 disabled:text-gray-400 disabled:cursor-not-allowed transition-colors"
+                            title="Trích xuất lại dữ liệu từ ảnh bằng AI"
+                        >
+                            <SparklesIcon className="h-4 w-4" />
+                            <span>
+                                {isReExtracting ? 'Đang xử lý...' : cooldown > 0 ? `Chờ ${cooldown}s` : 'Trích xuất lại'}
+                            </span>
+                        </button>
+                    </div>
+
                     <div className="flex-grow space-y-5">
                         <div>
                             <label htmlFor="name" className="block text-base font-medium text-gray-700">Tên chứng chỉ</label>

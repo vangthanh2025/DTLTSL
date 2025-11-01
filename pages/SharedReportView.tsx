@@ -1,8 +1,14 @@
-import React, { useState, useEffect, useMemo, ReactNode } from 'react';
+import React, { useState, useEffect, useMemo, ReactNode, useRef } from 'react';
 import { db } from '../firebase';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, collection, getDocs } from 'firebase/firestore';
 import PrintIcon from '../components/icons/PrintIcon';
 import CertificateDetailModal from '../components/CertificateDetailModal';
+import { GoogleGenAI } from '@google/genai';
+import AIAssistantIcon from '../components/icons/AIAssistantIcon';
+import CloseIcon from '../components/icons/CloseIcon';
+import SendIcon from '../components/icons/SendIcon';
+import UserIcon from '../components/icons/UserIcon';
+
 
 // Interfaces
 interface ComplianceReportRow { id: string; name: string; title: string; totalCredits: number; requirement: number; status: 'Đã đạt' | 'Chưa đạt'; }
@@ -36,6 +42,15 @@ const SharedReportView: React.FC<SharedReportViewProps> = ({ shareId }) => {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [detailModalUser, setDetailModalUser] = useState<SummaryWithDetailsRow | null>(null);
+
+    // AI Assistant State
+    const [geminiApiKey, setGeminiApiKey] = useState<string | null>(null);
+    const [isChatOpen, setIsChatOpen] = useState(false);
+    const [messages, setMessages] = useState<{ sender: 'user' | 'ai'; text: string }[]>([]);
+    const [userInput, setUserInput] = useState('');
+    const [isAiLoading, setIsAiLoading] = useState(false);
+    const chatEndRef = useRef<HTMLDivElement | null>(null);
+
 
     useEffect(() => {
         const fetchReport = async () => {
@@ -88,7 +103,23 @@ const SharedReportView: React.FC<SharedReportViewProps> = ({ shareId }) => {
             }
         };
 
+        const fetchGeminiKey = async () => {
+            try {
+                const keyCollection = collection(db, 'KeyGemini');
+                const keySnapshot = await getDocs(keyCollection);
+                if (!keySnapshot.empty) {
+                    const keyDoc = keySnapshot.docs[0];
+                    setGeminiApiKey(keyDoc.data().key);
+                } else {
+                    console.warn("No Gemini API Key found in Firestore.");
+                }
+            } catch (error) {
+                console.error("Error fetching Gemini API Key:", error);
+            }
+        };
+
         fetchReport();
+        fetchGeminiKey();
     }, [shareId]);
 
     const { headers, data, reportType } = useMemo(() => {
@@ -104,6 +135,65 @@ const SharedReportView: React.FC<SharedReportViewProps> = ({ shareId }) => {
             return { headers: {}, data: [], reportType: '' };
         }
     }, [report]);
+
+    useEffect(() => {
+        chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }, [messages, isAiLoading]);
+
+    const formatResponse = (text: string) => {
+        return text.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                   .replace(/\*(.*?)\*/g, '<em>$1</em>')
+                   .replace(/\n/g, '<br />');
+    };
+
+    const handleSendMessage = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!userInput.trim() || isAiLoading || !report) return;
+
+        const userMessage = { sender: 'user' as const, text: userInput };
+        setMessages(prev => [...prev, userMessage]);
+        setUserInput('');
+        setIsAiLoading(true);
+
+        if (!geminiApiKey) {
+            const errorMessage = {
+                sender: 'ai' as const,
+                text: 'Lỗi: Gemini API Key chưa được cấu hình. Tính năng AI không khả dụng.',
+            };
+            setMessages((prev) => [...prev, errorMessage]);
+            setIsAiLoading(false);
+            return;
+        }
+
+        try {
+            const ai = new GoogleGenAI({ apiKey: geminiApiKey });
+            
+            const prompt = `Bạn là một trợ lý AI chuyên nghiệp, nhiệm vụ của bạn là phân tích và trả lời các câu hỏi dựa trên dữ liệu báo cáo được cung cấp. Dữ liệu báo cáo ở định dạng JSON. Hãy trả lời một cách ngắn gọn, chính xác bằng tiếng Việt.
+            
+            Dữ liệu báo cáo cho "${report.reportTitle}":
+            ${report.reportData}
+
+            Câu hỏi của người dùng:
+            "${userInput}"`;
+
+            const response = await ai.models.generateContent({
+                model: 'gemini-2.5-flash',
+                contents: prompt,
+            });
+
+            const aiMessage = { sender: 'ai' as const, text: response.text };
+            setMessages((prev) => [...prev, aiMessage]);
+        } catch (error) {
+            console.error('Gemini API error:', error);
+            const errorMessage = {
+                sender: 'ai' as const,
+                text: 'Rất tiếc, đã xảy ra lỗi khi kết nối với trợ lý AI. Vui lòng thử lại sau.',
+            };
+            setMessages((prev) => [...prev, errorMessage]);
+        } finally {
+            setIsAiLoading(false);
+        }
+    };
 
     const renderCellContent = (row: ReportRow, key: string): ReactNode => {
         if (key === 'actions' && reportType === 'summary_with_details') {
@@ -295,12 +385,85 @@ const SharedReportView: React.FC<SharedReportViewProps> = ({ shareId }) => {
                     <p>Hệ thống Quản lý Đào tạo Liên tục</p>
                 </footer>
             </div>
-            {detailModalUser && (
+             {detailModalUser && (
                 <CertificateDetailModal
                     user={detailModalUser}
                     onClose={() => setDetailModalUser(null)}
                 />
             )}
+
+            {/* AI Assistant FAB */}
+            <button
+                onClick={() => setIsChatOpen(true)}
+                className="no-print fixed bottom-6 right-6 bg-gradient-to-br from-teal-500 to-sky-600 text-white rounded-full p-4 shadow-lg hover:scale-110 transition-transform duration-200 z-30"
+                aria-label="Mở Trợ lý AI"
+            >
+                <AIAssistantIcon className="h-7 w-7" />
+            </button>
+            
+            {/* AI Assistant Chat Modal */}
+            {isChatOpen && <div className="no-print fixed inset-0 bg-black bg-opacity-50 z-40" onClick={() => setIsChatOpen(false)}></div>}
+            <div className={`no-print fixed bottom-0 right-0 left-0 sm:left-auto sm:right-6 bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl z-50 flex flex-col transition-transform duration-300 ease-in-out ${isChatOpen ? 'translate-y-0' : 'translate-y-full sm:translate-y-[calc(100%+1.5rem)]'}`}
+                 style={{ height: 'calc(100% - 4rem)', maxHeight: '700px', width: '100%', maxWidth: '450px' }}>
+                <header className="flex items-center justify-between p-4 border-b flex-shrink-0">
+                    <h3 className="text-lg font-bold text-teal-800 flex items-center gap-2">
+                        <AIAssistantIcon className="h-6 w-6" />
+                        Trợ lý Báo cáo AI
+                    </h3>
+                    <button onClick={() => setIsChatOpen(false)} className="text-gray-500 hover:text-gray-800">
+                        <CloseIcon className="h-6 w-6" />
+                    </button>
+                </header>
+                
+                <main className="flex-1 p-4 overflow-y-auto bg-slate-50">
+                    <div className="space-y-6">
+                        {messages.length === 0 && (
+                            <div className="text-center text-gray-500 p-8">
+                                <p>Tôi có thể giúp gì với báo cáo này?</p>
+                                <p className="text-sm mt-2">Ví dụ: "Ai có nhiều tiết nhất?" hoặc "Tóm tắt tình hình tuân thủ."</p>
+                            </div>
+                        )}
+                        {messages.map((msg, index) => (
+                            <div key={index} className={`flex items-start gap-3 ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}>
+                                {msg.sender === 'ai' && <div className="flex-shrink-0 w-8 h-8 rounded-full bg-teal-100 flex items-center justify-center"><AIAssistantIcon className="w-5 h-5 text-teal-600" /></div>}
+                                <div className={`max-w-xs md:max-w-sm p-3 rounded-xl shadow-sm ${msg.sender === 'user' ? 'bg-teal-600 text-white rounded-br-none' : 'bg-white text-gray-800 rounded-bl-none border'}`}>
+                                    <p className="text-base" dangerouslySetInnerHTML={{ __html: formatResponse(msg.text) }} />
+                                </div>
+                                {msg.sender === 'user' && <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center"><UserIcon className="w-5 h-5 text-gray-600" /></div>}
+                            </div>
+                        ))}
+                        {isAiLoading && (
+                            <div className="flex items-start gap-3 justify-start">
+                                <div className="flex-shrink-0 w-8 h-8 rounded-full bg-teal-100 flex items-center justify-center"><AIAssistantIcon className="w-5 h-5 text-teal-600" /></div>
+                                <div className="max-w-lg p-3 rounded-xl shadow-sm bg-white text-gray-800 rounded-bl-none border">
+                                    <div className="flex items-center space-x-2">
+                                        <div className="w-2 h-2 bg-teal-500 rounded-full animate-pulse"></div>
+                                        <div className="w-2 h-2 bg-teal-500 rounded-full animate-pulse [animation-delay:0.2s]"></div>
+                                        <div className="w-2 h-2 bg-teal-500 rounded-full animate-pulse [animation-delay:0.4s]"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                        <div ref={chatEndRef} />
+                    </div>
+                </main>
+                
+                <footer className="p-4 border-t bg-white flex-shrink-0">
+                    <form onSubmit={handleSendMessage} className="flex items-center gap-3">
+                        <input
+                            type="text"
+                            value={userInput}
+                            onChange={(e) => setUserInput(e.target.value)}
+                            placeholder="Đặt câu hỏi về báo cáo..."
+                            disabled={isAiLoading}
+                            className="flex-1 w-full px-4 py-2 border border-gray-300 rounded-full shadow-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-teal-500 transition disabled:bg-gray-100"
+                        />
+                        <button type="submit" disabled={isAiLoading || !userInput.trim()} className="flex-shrink-0 w-10 h-10 flex items-center justify-center bg-teal-600 text-white rounded-full hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-teal-500 transition-colors disabled:bg-teal-400 disabled:cursor-not-allowed">
+                            <SendIcon className="w-5 h-5" />
+                        </button>
+                    </form>
+                </footer>
+            </div>
         </div>
     );
 };

@@ -1,12 +1,16 @@
-import React, { useState, useMemo, ReactNode } from 'react';
+import React, { useState, useMemo, ReactNode, useRef, useEffect } from 'react';
 import { UserData, Certificate, Department, Title, AppSettings } from '../App';
 import PrintIcon from '../components/icons/PrintIcon';
 import ExportIcon from '../components/icons/ExportIcon';
 import ShareIcon from '../components/icons/ShareIcon';
+import SparklesIcon from '../components/icons/SparklesIcon';
 import ShareReportModal from '../components/ShareReportModal';
 import CertificateDetailModal from '../components/CertificateDetailModal';
 import { db } from '../firebase';
 import { addDoc, collection, Timestamp } from 'firebase/firestore';
+import { GoogleGenAI } from '@google/genai';
+import WordIcon from '../components/icons/WordIcon';
+import ChevronDownIcon from '../components/icons/ChevronDownIcon';
 
 
 interface ComplianceReportRow {
@@ -44,8 +48,6 @@ interface SummaryWithDetailsRow {
 
 
 type ReportRow = ComplianceReportRow | SummaryReportRow | DetailedReportRow | SummaryWithDetailsRow;
-// FIX: This comparison appears to be unintentional because the types '"id" | "name" | "totalCredits"' and '"actions"' have no overlap.
-// Changed SortableKeys to string to allow any header key for sorting.
 type SortableKeys = string;
 
 interface ReportingProps {
@@ -55,9 +57,10 @@ interface ReportingProps {
     departments: Department[];
     titles: Title[];
     settings: AppSettings | null;
+    geminiApiKey: string | null;
 }
 
-const Reporting: React.FC<ReportingProps> = ({ user, users, certificates, departments, titles, settings }) => {
+const Reporting: React.FC<ReportingProps> = ({ user, users, certificates, departments, titles, settings, geminiApiKey }) => {
     const [reportType, setReportType] = useState('');
     const [filterMode, setFilterMode] = useState<'year' | 'all' | 'range'>('year');
     const [selectedYear, setSelectedYear] = useState(new Date().getFullYear().toString());
@@ -72,6 +75,13 @@ const Reporting: React.FC<ReportingProps> = ({ user, users, certificates, depart
     const [sortConfig, setSortConfig] = useState<{ key: SortableKeys; direction: 'ascending' | 'descending' } | null>(null);
     const [shareModalInfo, setShareModalInfo] = useState<{ url: string; expiresAt: Date; token: string; } | null>(null);
     const [detailModalUser, setDetailModalUser] = useState<SummaryWithDetailsRow | null>(null);
+
+    const [aiSummary, setAiSummary] = useState<string | null>(null);
+    const [isSummarizing, setIsSummarizing] = useState(false);
+    const [summaryError, setSummaryError] = useState<string | null>(null);
+
+    const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
+    const exportMenuRef = useRef<HTMLDivElement>(null);
 
 
     const titleMap = useMemo(() => new Map(titles.map(t => [t.id, t.name])), [titles]);
@@ -93,12 +103,24 @@ const Reporting: React.FC<ReportingProps> = ({ user, users, certificates, depart
         { value: 'department', label: 'Báo cáo tổng hợp theo Khoa/Phòng' },
         { value: 'title_detail', label: 'Báo cáo tổng hợp theo Chức danh' },
     ];
+    
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (exportMenuRef.current && !exportMenuRef.current.contains(event.target as Node)) {
+                setIsExportMenuOpen(false);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, []);
 
     const handleGenerateReport = () => {
         setIsGenerating(true);
         setReportData(null);
         setReportHeaders({});
         setSortConfig(null);
+        setAiSummary(null);
+        setSummaryError(null);
 
         setTimeout(() => { // Simulate processing delay
             const validRoles: UserData['role'][] = ['user', 'reporter_user'];
@@ -138,8 +160,8 @@ const Reporting: React.FC<ReportingProps> = ({ user, users, certificates, depart
                     certificates.forEach(cert => {
                         const certYear = cert.date.toDate().getFullYear();
                         if (settings && certYear >= settings.complianceStartYear && certYear <= settings.complianceEndYear) {
-                            // FIX: The left-hand side and right-hand side of an arithmetic operation must be of type 'any', 'number', 'bigint' or an enum type.
-                            userCreditsMap.set(cert.userId, Number(userCreditsMap.get(cert.userId) ?? 0) + Number(cert.credits));
+                            const credits = Number(cert.credits) || 0;
+                            userCreditsMap.set(cert.userId, (userCreditsMap.get(cert.userId) ?? 0) + credits);
                         }
                     });
 
@@ -172,8 +194,9 @@ const Reporting: React.FC<ReportingProps> = ({ user, users, certificates, depart
                             userCertMap.set(cert.userId, { certificates: [], totalCredits: 0 });
                         }
                         const entry = userCertMap.get(cert.userId)!;
-                        entry.certificates.push({ name: cert.name, credits: cert.credits });
-                        entry.totalCredits += Number(cert.credits);
+                        const credits = Number(cert.credits) || 0;
+                        entry.certificates.push({ name: cert.name, credits: credits });
+                        entry.totalCredits += credits;
                     });
 
                     const reportResult: SummaryWithDetailsRow[] = relevantUsers.map(user => {
@@ -195,7 +218,11 @@ const Reporting: React.FC<ReportingProps> = ({ user, users, certificates, depart
                 case 'title_detail': {
                     const userCreditsMap = new Map<string, number>();
                     filteredCertsByTime.forEach(cert => {
-                        userCreditsMap.set(cert.userId, Number(userCreditsMap.get(cert.userId) ?? 0) + Number(cert.credits));
+                        // FIX: The left-hand side and right-hand side of an arithmetic operation must be of type 'number'.
+                        // Explicitly convert credits to a number before calculation.
+                        const credits = Number(cert.credits) || 0;
+                        const currentCredits = userCreditsMap.get(cert.userId) || 0;
+                        userCreditsMap.set(cert.userId, currentCredits + credits);
                     });
 
                     if (reportType === 'summary') {
@@ -211,8 +238,9 @@ const Reporting: React.FC<ReportingProps> = ({ user, users, certificates, depart
                         filteredCertsByTime.forEach(cert => {
                             if (!userCertMap.has(cert.userId)) userCertMap.set(cert.userId, { certificates: [], totalCredits: 0 });
                             const entry = userCertMap.get(cert.userId)!;
-                            entry.certificates.push({ name: cert.name, credits: cert.credits });
-                            entry.totalCredits = entry.totalCredits + Number(cert.credits);
+                            const credits = Number(cert.credits) || 0;
+                            entry.certificates.push({ name: cert.name, credits: credits });
+                            entry.totalCredits = entry.totalCredits + credits;
                         });
                         const reportResult: DetailedReportRow[] = Array.from(userCertMap.entries()).map(([userId, data]) => ({
                             id: userId, name: userMap.get(userId)?.name || 'Không rõ', ...data
@@ -406,6 +434,107 @@ const Reporting: React.FC<ReportingProps> = ({ user, users, certificates, depart
         link.click();
         document.body.removeChild(link);
     };
+
+    const handleExportWord = () => {
+        if (!sortedReportData) return;
+    
+        const reportTitleOptions: { [key: string]: string } = {
+            compliance: 'Báo cáo Tuân thủ theo Chu kỳ',
+            summary_with_details: 'Báo cáo Tổng hợp có Chi tiết',
+            summary: 'Báo cáo tổng hợp toàn bộ',
+            detail: 'Báo cáo chi tiết chứng chỉ',
+            department: 'Báo cáo tổng hợp theo Khoa/Phòng',
+            title_detail: 'Báo cáo tổng hợp theo Chức danh',
+        };
+        const reportTitle = reportTitleOptions[reportType] || 'Báo cáo';
+    
+        const styles = `
+            <style>
+                body { font-family: 'Times New Roman', serif; font-size: 12pt; }
+                table { border-collapse: collapse; width: 100%; }
+                th, td { border: 1px solid #000; padding: 5px; text-align: left; vertical-align: top; }
+                th { background-color: #f2f2f2; font-weight: bold; }
+                .report-title { font-size: 16pt; font-weight: bold; text-align: center; margin-bottom: 20px; }
+                .group-header-row { font-weight: bold; background-color: #e6e6e6; }
+                .group-footer-row { font-weight: bold; }
+            </style>
+        `;
+    
+        let tableHtml = '<table>';
+    
+        if (reportType === 'detail' || reportType === 'summary_with_details') {
+            tableHtml += `<thead><tr><th>STT</th><th>Họ và tên</th><th>Tên chứng chỉ</th><th>Số tiết</th><th>Tổng tiết</th></tr></thead><tbody>`;
+            let stt = 1;
+            (sortedReportData as (DetailedReportRow | SummaryWithDetailsRow)[]).forEach(userRow => {
+                if (userRow.certificates.length > 0) {
+                    userRow.certificates.forEach((cert, certIndex) => {
+                        tableHtml += `<tr>`;
+                        if (certIndex === 0) {
+                            tableHtml += `<td rowspan="${userRow.certificates.length}">${stt}</td>`;
+                            tableHtml += `<td rowspan="${userRow.certificates.length}">${userRow.name}</td>`;
+                        }
+                        tableHtml += `<td>${cert.name}</td><td>${cert.credits}</td>`;
+                        if (certIndex === 0) {
+                            tableHtml += `<td rowspan="${userRow.certificates.length}">${userRow.totalCredits}</td>`;
+                        }
+                        tableHtml += `</tr>`;
+                    });
+                    stt++;
+                }
+            });
+            tableHtml += `</tbody>`;
+        } else if (reportType === 'department' || reportType === 'title_detail') {
+            tableHtml += `<thead><tr><th>STT</th><th>Họ tên</th><th>Tổng số tiết</th></tr></thead><tbody>`;
+            const isDeptReport = reportType === 'department';
+            const groupHeaderLabel = isDeptReport ? 'Khoa/Phòng' : 'Chức danh';
+            const groupMap = isDeptReport ? departmentMap : titleMap;
+            const data = sortedReportData as SummaryReportRow[];
+            
+            const groupedData: { [key: string]: { rows: SummaryReportRow[], totalCredits: number } } = {};
+            data.forEach(row => {
+                const groupId = isDeptReport ? row.departmentId : row.titleId;
+                if (!groupId) return;
+                if (!groupedData[groupId]) groupedData[groupId] = { rows: [], totalCredits: 0 };
+                groupedData[groupId].rows.push(row);
+                groupedData[groupId].totalCredits += row.totalCredits;
+            });
+            
+            const sortedGroupIds = Object.keys(groupedData).sort((a,b) => (groupMap.get(a) || '').localeCompare(groupMap.get(b) || '', 'vi'));
+    
+            sortedGroupIds.forEach(groupId => {
+                const group = groupedData[groupId];
+                const groupName = groupMap.get(groupId) || 'Không xác định';
+                tableHtml += `<tr class="group-header-row"><td colspan="3">${groupHeaderLabel}: ${groupName}</td></tr>`;
+                group.rows.forEach((row, index) => {
+                    tableHtml += `<tr><td>${index + 1}</td><td>${row.name}</td><td>${row.totalCredits}</td></tr>`;
+                });
+                tableHtml += `<tr class="group-footer-row"><td colspan="2" style="text-align: right;">Tổng cộng</td><td>${group.totalCredits}</td></tr>`;
+            });
+            tableHtml += `</tbody>`;
+        } else {
+            tableHtml += `<thead><tr><th>STT</th>${Object.values(reportHeaders).map(h => `<th>${h}</th>`).join('')}</tr></thead><tbody>`;
+            const keys = Object.keys(reportHeaders);
+            sortedReportData.forEach((row, index) => {
+                tableHtml += `<tr><td>${index + 1}</td>`;
+                tableHtml += keys.map(key => `<td>${(row as any)[key] ?? ''}</td>`).join('');
+                tableHtml += `</tr>`;
+            });
+            tableHtml += `</tbody>`;
+        }
+    
+        tableHtml += '</table>';
+    
+        const fullHtml = `<!DOCTYPE html><html><head><meta charset="UTF-8">${styles}</head><body><div class="report-title">${reportTitle}</div>${tableHtml}</body></html>`;
+        const blob = new Blob([fullHtml], { type: 'application/msword' });
+        const link = document.createElement('a');
+        const url = URL.createObjectURL(blob);
+        const today = new Date().toISOString().slice(0, 10);
+        link.setAttribute('href', url);
+        link.setAttribute('download', `BaoCao_${reportType}_${today}.doc`);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    };
     
     const renderCellContent = (row: ReportRow, key: string): ReactNode => {
         if (key === 'actions' && reportType === 'summary_with_details') {
@@ -436,6 +565,73 @@ const Reporting: React.FC<ReportingProps> = ({ user, users, certificates, depart
         }
 
         return 'N/A';
+    };
+
+    const handleAiSummary = async () => {
+        if (!sortedReportData || !geminiApiKey) {
+            setSummaryError('Không thể tóm tắt: Thiếu dữ liệu báo cáo hoặc API key.');
+            return;
+        }
+    
+        setIsSummarizing(true);
+        setAiSummary(null);
+        setSummaryError(null);
+    
+        try {
+            // Simplify data for the prompt to keep it concise and relevant
+            const simplifiedData = sortedReportData.map(row => {
+                const simpleRow: { [key: string]: any } = {};
+                switch(reportType) {
+                    case 'compliance':
+                        simpleRow.name = row.name;
+                        simpleRow.status = (row as ComplianceReportRow).status;
+                        simpleRow.totalCredits = (row as ComplianceReportRow).totalCredits;
+                        simpleRow.requirement = (row as ComplianceReportRow).requirement;
+                        break;
+                    case 'summary_with_details':
+                    case 'summary':
+                    case 'department':
+                    case 'title_detail':
+                        simpleRow.name = row.name;
+                        simpleRow.totalCredits = (row as SummaryReportRow).totalCredits;
+                        if ('department' in row) simpleRow.department = (row as SummaryReportRow).department;
+                        if ('title' in row) simpleRow.title = (row as SummaryReportRow).title;
+                        break;
+                    default: // Fallback for other or detail types
+                        simpleRow.name = row.name;
+                        if ('totalCredits' in row) simpleRow.totalCredits = (row as { totalCredits: number }).totalCredits;
+                }
+                return simpleRow;
+            }).slice(0, 50); // Limit to first 50 records to avoid overly large prompts
+    
+            const dataString = JSON.stringify(simplifiedData);
+            
+            const reportTitleOptions: { [key: string]: string } = {
+                compliance: 'Báo cáo Tuân thủ theo Chu kỳ',
+                summary_with_details: 'Báo cáo Tổng hợp có Chi tiết',
+                summary: 'Báo cáo tổng hợp toàn bộ',
+                detail: 'Báo cáo chi tiết chứng chỉ',
+                department: 'Báo cáo tổng hợp theo Khoa/Phòng',
+                title_detail: 'Báo cáo tổng hợp theo Chức danh',
+            };
+            const reportName = reportTitleOptions[reportType] || 'Báo cáo';
+    
+            const prompt = `Bạn là một trợ lý phân tích dữ liệu chuyên nghiệp. Dựa trên dữ liệu báo cáo dạng JSON sau đây về "${reportName}", hãy viết một bản tóm tắt ngắn gọn bằng tiếng Việt (khoảng 3-4 câu) về những điểm nổi bật nhất, các xu hướng chính, hoặc các điểm cần lưu ý. Trả lời trực tiếp vào vấn đề, không cần lời chào. Dữ liệu: ${dataString}`;
+    
+            const ai = new GoogleGenAI({ apiKey: geminiApiKey });
+            const response = await ai.models.generateContent({
+                model: 'gemini-2.5-flash',
+                contents: prompt,
+            });
+    
+            setAiSummary(response.text);
+    
+        } catch (error) {
+            console.error("AI summary error:", error);
+            setSummaryError('Đã xảy ra lỗi khi tạo tóm tắt. Vui lòng thử lại.');
+        } finally {
+            setIsSummarizing(false);
+        }
     };
 
     const renderTimeFilters = () => (
@@ -614,19 +810,19 @@ const Reporting: React.FC<ReportingProps> = ({ user, users, certificates, depart
         <div className="space-y-4">
             <div className="bg-white p-6 rounded-lg shadow-md no-print">
                 <h2 className="text-lg font-semibold text-gray-800 mb-4">Tạo báo cáo</h2>
-                <div className="max-w-xl space-y-3">
-                    <div>
-                        <label htmlFor="reportType" className="block text-base font-medium text-gray-700">Loại báo cáo</label>
-                        <select id="reportType" value={reportType} onChange={(e) => { setReportType(e.target.value); setReportData(null); }} className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-teal-500 focus:border-teal-500 rounded-md">
-                            {reportOptions.map(opt => <option key={opt.value} value={opt.value} disabled={opt.value === ''}>{opt.label}</option>)}
-                        </select>
-                    </div>
-                     {renderFilters()}
-                    <div className="pt-2">
-                        <button type="button" onClick={handleGenerateReport} disabled={!reportType || isGenerating} className="w-full sm:w-auto bg-teal-600 text-white font-semibold py-2 px-4 rounded-md text-base transition-colors hover:bg-teal-700 disabled:bg-teal-400 disabled:cursor-wait">
+                <div className="space-y-3">
+                     <div className="flex flex-col sm:flex-row items-end gap-4">
+                        <div className="flex-grow w-full sm:w-auto">
+                            <label htmlFor="reportType" className="block text-base font-medium text-gray-700">Loại báo cáo</label>
+                            <select id="reportType" value={reportType} onChange={(e) => { setReportType(e.target.value); setReportData(null); }} className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-teal-500 focus:border-teal-500 rounded-md">
+                                {reportOptions.map(opt => <option key={opt.value} value={opt.value} disabled={opt.value === ''}>{opt.label}</option>)}
+                            </select>
+                        </div>
+                        <button type="button" onClick={handleGenerateReport} disabled={!reportType || isGenerating} className="w-full sm:w-auto bg-teal-600 text-white font-semibold py-2 px-4 rounded-md text-base transition-colors hover:bg-teal-700 disabled:bg-teal-400 disabled:cursor-wait flex-shrink-0">
                             {isGenerating ? 'Đang tạo...' : 'Tạo báo cáo'}
                         </button>
                     </div>
+                     {renderFilters()}
                 </div>
             </div>
 
@@ -636,17 +832,51 @@ const Reporting: React.FC<ReportingProps> = ({ user, users, certificates, depart
                 <div id="printable-report" className="bg-white p-6 rounded-lg shadow-md animate-fade-in">
                     <div className="flex flex-col sm:flex-row justify-between sm:items-center mb-4 gap-4 no-print">
                         <h3 className="text-lg font-semibold text-gray-800">Kết quả báo cáo</h3>
-                         <div className="flex items-center gap-3">
-                            <button onClick={handlePrint} className="flex items-center gap-2 text-base bg-gray-200 text-gray-700 font-semibold py-2 px-3 rounded-md hover:bg-gray-300 transition-colors"><PrintIcon className="h-5 w-5" /><span>In</span></button>
-                            <button onClick={handleExportExcel} className="flex items-center gap-2 text-base bg-green-600 text-white font-semibold py-2 px-3 rounded-md hover:bg-green-700 transition-colors"><ExportIcon className="h-5 w-5" /><span>Xuất Excel</span></button>
+                         <div className="flex items-center flex-wrap justify-end gap-3">
+                             <div className="relative" ref={exportMenuRef}>
+                                <button onClick={() => setIsExportMenuOpen(prev => !prev)} className="flex items-center gap-2 text-base bg-gray-700 text-white font-semibold py-2 px-3 rounded-md hover:bg-gray-800 transition-colors">
+                                    <ExportIcon className="h-5 w-5" />
+                                    <span>Xuất file</span>
+                                    <ChevronDownIcon className="h-4 w-4" />
+                                </button>
+                                {isExportMenuOpen && (
+                                    <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg z-20 border">
+                                        <button onClick={() => { handlePrint(); setIsExportMenuOpen(false); }} className="w-full text-left flex items-center gap-3 px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"><PrintIcon className="h-5 w-5" /> In</button>
+                                        <button onClick={() => { handleExportExcel(); setIsExportMenuOpen(false); }} className="w-full text-left flex items-center gap-3 px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"><ExportIcon className="h-5 w-5 text-green-600" /> Xuất Excel</button>
+                                        <button onClick={() => { handleExportWord(); setIsExportMenuOpen(false); }} className="w-full text-left flex items-center gap-3 px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"><WordIcon className="h-5 w-5" /> Xuất Word</button>
+                                    </div>
+                                )}
+                            </div>
                             {['admin', 'reporter', 'reporter_user'].includes(user.role) && (
                                 <button onClick={handleShareReport} className="flex items-center gap-2 text-base bg-blue-600 text-white font-semibold py-2 px-3 rounded-md hover:bg-blue-700 transition-colors">
                                     <ShareIcon className="h-5 w-5" />
                                     <span>Chia sẻ</span>
                                 </button>
                             )}
+                            <button 
+                                onClick={handleAiSummary}
+                                disabled={isSummarizing || !geminiApiKey}
+                                className="flex items-center gap-2 text-base bg-indigo-600 text-white font-semibold py-2 px-3 rounded-md hover:bg-indigo-700 transition-colors disabled:bg-indigo-400 disabled:cursor-wait"
+                                title={!geminiApiKey ? "Chưa cấu hình API Key" : "Tóm tắt bằng AI"}
+                            >
+                                <SparklesIcon className="h-5 w-5" />
+                                <span>{isSummarizing ? 'Đang tóm tắt...' : 'Tóm tắt AI'}</span>
+                            </button>
                         </div>
                     </div>
+                    
+                    {(isSummarizing || aiSummary || summaryError) && (
+                        <div className="mb-6 p-4 rounded-lg bg-blue-50 border border-blue-200 no-print animate-fade-in">
+                            <h4 className="flex items-center gap-2 text-base font-semibold text-blue-800">
+                                <SparklesIcon className="h-5 w-5" />
+                                AI Tóm tắt
+                            </h4>
+                            {isSummarizing && <p className="mt-2 text-blue-700">Đang phân tích dữ liệu, vui lòng chờ...</p>}
+                            {summaryError && <p className="mt-2 text-red-600">{summaryError}</p>}
+                            {aiSummary && <p className="mt-2 text-blue-900 whitespace-pre-wrap">{aiSummary}</p>}
+                        </div>
+                    )}
+
                     <div className="overflow-x-auto">
                         {reportType === 'detail' ? renderDetailedReport() : 
                          reportType === 'department' ? renderGroupedReport('department') :

@@ -83,22 +83,25 @@ const ProfileEditModal: React.FC<ProfileEditModalProps> = ({ user, departments, 
 
   return (
     <div 
-      className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+      className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
     >
       <div 
-        className="bg-white rounded-lg shadow-xl w-full max-w-2xl p-8 m-4 relative"
+        className="bg-white rounded-lg shadow-xl w-full max-w-2xl flex flex-col max-h-[90vh]"
         onClick={(e) => e.stopPropagation()}
       >
-        <button 
-          onClick={onClose}
-          className="absolute top-4 right-4 text-gray-400 hover:text-gray-600"
-          aria-label="Đóng"
-        >
-          <CloseIcon className="h-6 w-6" />
-        </button>
-        <h2 className="text-2xl font-bold text-teal-800 mb-6">Chỉnh sửa thông tin cá nhân</h2>
-        
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <header className="p-6 border-b border-gray-200 flex-shrink-0 relative flex justify-between items-center">
+          <h2 className="text-2xl font-bold text-teal-800">Chỉnh sửa thông tin cá nhân</h2>
+          <button 
+            onClick={onClose}
+            className="text-gray-400 hover:text-gray-600"
+            aria-label="Đóng"
+          >
+            <CloseIcon className="h-6 w-6" />
+          </button>
+        </header>
+
+        <form onSubmit={handleSubmit} className="flex-grow flex flex-col overflow-hidden">
+          <main className="flex-grow overflow-y-auto p-6">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
                     <label className="block text-base font-medium text-gray-700">Họ và tên</label>
@@ -188,21 +191,25 @@ const ProfileEditModal: React.FC<ProfileEditModalProps> = ({ user, departments, 
                     />
                 </div>
             </div>
-            <div className="pt-6 flex justify-end space-x-3">
-                <button
-                    type="button"
-                    onClick={onClose}
-                    className="bg-gray-200 text-gray-700 font-semibold py-2 px-4 rounded-lg hover:bg-gray-300 transition-colors"
-                >
-                    Hủy
-                </button>
-                <button
-                    type="submit"
-                    className="bg-teal-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-teal-700 transition-colors"
-                >
-                    Lưu thay đổi
-                </button>
+          </main>
+          
+          <footer className="p-6 pt-4 border-t border-gray-200 flex-shrink-0">
+            <div className="flex justify-end space-x-3">
+              <button
+                  type="button"
+                  onClick={onClose}
+                  className="bg-gray-200 text-gray-700 font-semibold py-2 px-4 rounded-lg hover:bg-gray-300 transition-colors"
+              >
+                  Hủy
+              </button>
+              <button
+                  type="submit"
+                  className="bg-teal-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-teal-700 transition-colors"
+              >
+                  Lưu thay đổi
+              </button>
             </div>
+          </footer>
         </form>
       </div>
     </div>

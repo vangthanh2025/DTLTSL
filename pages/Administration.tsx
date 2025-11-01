@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { db } from '../firebase';
-import { collection, getDocs, doc, deleteDoc, addDoc, updateDoc, Timestamp } from 'firebase/firestore';
+import { collection, getDocs, doc, deleteDoc, addDoc, updateDoc, Timestamp, query, where, orderBy } from 'firebase/firestore';
 import { UserData, Department, Title, GeminiKey } from '../App';
 import PencilIcon from '../components/icons/PencilIcon';
 import TrashIcon from '../components/icons/TrashIcon';
@@ -13,8 +13,10 @@ import QRIcon from '../components/icons/QRIcon';
 import UpdateExpirationModal from '../components/UpdateExpirationModal';
 import EyeIcon from '../components/icons/EyeIcon';
 import ShareReportModal from '../components/ShareReportModal';
+import { logAction, AuditLog } from '../utils/logger';
 
 interface AdministrationProps {
+    currentUser: UserData;
     departments: Department[];
     titles: Title[];
     onKeysUpdate: () => void;
@@ -50,7 +52,7 @@ const statusColors: { [key: string]: string } = {
     locked: 'bg-yellow-100 text-yellow-800',
 };
 
-const Administration: React.FC<AdministrationProps> = ({ departments, titles, onKeysUpdate, onDepartmentsUpdate, onTitlesUpdate }) => {
+const Administration: React.FC<AdministrationProps> = ({ currentUser, departments, titles, onKeysUpdate, onDepartmentsUpdate, onTitlesUpdate }) => {
     const [users, setUsers] = useState<UserData[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -92,6 +94,17 @@ const Administration: React.FC<AdministrationProps> = ({ departments, titles, on
     const [deletingSharedReport, setDeletingSharedReport] = useState<SharedReport | null>(null);
     const [viewingQRReport, setViewingQRReport] = useState<SharedReport | null>(null);
     const [isConfirmingDeleteAll, setIsConfirmingDeleteAll] = useState(false);
+    
+    // Audit Log State
+    const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
+    const [logsLoading, setLogsLoading] = useState(false);
+    const [logError, setLogError] = useState<string | null>(null);
+    const [logFilters, setLogFilters] = useState({
+        startDate: '',
+        endDate: '',
+        actorName: '',
+    });
+    const [hasSearchedLogs, setHasSearchedLogs] = useState(false);
 
 
     const departmentMap = new Map(departments.map(dept => [dept.id, dept.name]));
@@ -177,6 +190,7 @@ const Administration: React.FC<AdministrationProps> = ({ departments, titles, on
             const docRef = await addDoc(collection(db, 'Users'), newUserData);
             setUsers(prev => [...prev, { ...newUserData, id: docRef.id } as UserData]);
             setIsAddModalOpen(false);
+            await logAction(currentUser, 'USER_CREATE', { type: 'User', id: docRef.id, name: newUserData.name });
         } catch (err) { console.error("Error adding user: ", err); }
     };
 
@@ -186,6 +200,7 @@ const Administration: React.FC<AdministrationProps> = ({ departments, titles, on
             await updateDoc(doc(db, 'Users', editingUser.id), updatedData);
             setUsers(prev => prev.map(u => u.id === editingUser.id ? { ...u, ...updatedData } : u));
             setEditingUser(null);
+            await logAction(currentUser, 'USER_UPDATE', { type: 'User', id: editingUser.id, name: (updatedData.name || editingUser.name) }, { changes: updatedData });
         } catch (err) { console.error("Error updating user: ", err); }
     };
 
@@ -194,6 +209,7 @@ const Administration: React.FC<AdministrationProps> = ({ departments, titles, on
         try {
             await deleteDoc(doc(db, 'Users', deletingUser.id));
             setUsers(prev => prev.filter(u => u.id !== deletingUser.id));
+            await logAction(currentUser, 'USER_DELETE', { type: 'User', id: deletingUser.id, name: deletingUser.name });
             setDeletingUser(null);
         } catch (err) { console.error("Error deleting user: ", err); }
     };
@@ -206,6 +222,7 @@ const Administration: React.FC<AdministrationProps> = ({ departments, titles, on
                 failedLoginAttempts: 0
             });
             setUsers(prev => prev.map(u => u.id === userToUnlock.id ? { ...u, status: 'active', failedLoginAttempts: 0 } : u));
+            await logAction(currentUser, 'USER_UNLOCK', { type: 'User', id: userToUnlock.id, name: userToUnlock.name });
         } catch (err) {
             console.error("Error unlocking user: ", err);
         }
@@ -228,6 +245,7 @@ const Administration: React.FC<AdministrationProps> = ({ departments, titles, on
                 setSettingsDocId(newDocRef.id);
             }
             setSaveStatus('success');
+            await logAction(currentUser, 'SETTINGS_UPDATE', { type: 'System', id: 'settings', name: 'Compliance Cycle' }, { ...settingsData });
         } catch (err) {
             setSettingsError(err instanceof Error ? err.message : "Lỗi không xác định.");
             setSaveStatus('error');
@@ -237,12 +255,14 @@ const Administration: React.FC<AdministrationProps> = ({ departments, titles, on
     };
 
     // --- Key Management ---
+    const maskKey = (key: string) => key.length < 16 ? '***' : `${key.substring(0, 8)}...${key.substring(key.length - 8)}`;
     const handleAddKey = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!newKeyInput.trim()) return;
         try {
             const docRef = await addDoc(collection(db, 'KeyGemini'), { key: newKeyInput.trim() });
             setGeminiKeys(prev => [...prev, { id: docRef.id, key: newKeyInput.trim() }]);
+            await logAction(currentUser, 'API_KEY_ADD', { type: 'API Key', id: docRef.id, name: maskKey(newKeyInput.trim()) });
             setNewKeyInput('');
             onKeysUpdate();
         } catch (err) { console.error("Error adding Gemini Key:", err); }
@@ -253,6 +273,7 @@ const Administration: React.FC<AdministrationProps> = ({ departments, titles, on
         try {
             await deleteDoc(doc(db, 'KeyGemini', deletingKey.id));
             setGeminiKeys(prev => prev.filter(k => k.id !== deletingKey.id));
+            await logAction(currentUser, 'API_KEY_DELETE', { type: 'API Key', id: deletingKey.id, name: maskKey(deletingKey.key) });
             setDeletingKey(null);
             onKeysUpdate();
         } catch (err) { console.error("Error deleting Gemini Key:", err); }
@@ -282,7 +303,8 @@ const Administration: React.FC<AdministrationProps> = ({ departments, titles, on
         e.preventDefault();
         if (!newDepartmentName.trim()) return;
         try {
-            await addDoc(collection(db, 'Departments'), { name: newDepartmentName.trim() });
+            const docRef = await addDoc(collection(db, 'Departments'), { name: newDepartmentName.trim() });
+            await logAction(currentUser, 'CATEGORY_CREATE', { type: 'Department', id: docRef.id, name: newDepartmentName.trim() });
             setNewDepartmentName('');
             onDepartmentsUpdate();
         } catch (err) { console.error("Error adding department:", err); }
@@ -292,7 +314,8 @@ const Administration: React.FC<AdministrationProps> = ({ departments, titles, on
         e.preventDefault();
         if (!newTitleName.trim()) return;
         try {
-            await addDoc(collection(db, 'Titles'), { name: newTitleName.trim() });
+            const docRef = await addDoc(collection(db, 'Titles'), { name: newTitleName.trim() });
+            await logAction(currentUser, 'CATEGORY_CREATE', { type: 'Title', id: docRef.id, name: newTitleName.trim() });
             setNewTitleName('');
             onTitlesUpdate();
         } catch (err) { console.error("Error adding title:", err); }
@@ -307,8 +330,14 @@ const Administration: React.FC<AdministrationProps> = ({ departments, titles, on
     const handleSaveEdit = async () => {
         if (!editingItem || !editedName.trim()) return;
         const collectionName = editingItem.type === 'department' ? 'Departments' : 'Titles';
+        const typeName = editingItem.type === 'department' ? 'Department' : 'Title';
+        const originalItem = editingItem.type === 'department' 
+            ? localDepartments.find(d => d.id === editingItem.id) 
+            : localTitles.find(t => t.id === editingItem.id);
+
         try {
             await updateDoc(doc(db, collectionName, editingItem.id), { name: editedName.trim() });
+            await logAction(currentUser, 'CATEGORY_UPDATE', { type: typeName, id: editingItem.id, name: editedName.trim() }, { from: originalItem?.name });
             handleCancelEdit();
             if (editingItem.type === 'department') onDepartmentsUpdate(); else onTitlesUpdate();
         } catch (err) { console.error(`Error updating ${editingItem.type}:`, err); }
@@ -317,8 +346,10 @@ const Administration: React.FC<AdministrationProps> = ({ departments, titles, on
     const handleConfirmDelete = async () => {
         if (!deletingItem) return;
         const collectionName = deletingItem.type === 'department' ? 'Departments' : 'Titles';
+        const typeName = deletingItem.type === 'department' ? 'Department' : 'Title';
         try {
             await deleteDoc(doc(db, collectionName, deletingItem.item.id));
+            await logAction(currentUser, 'CATEGORY_DELETE', { type: typeName, id: deletingItem.item.id, name: deletingItem.item.name });
             setDeletingItem(null);
             if (deletingItem.type === 'department') onDepartmentsUpdate(); else onTitlesUpdate();
         } catch (err) { console.error(`Error deleting ${deletingItem.type}:`, err); }
@@ -365,7 +396,53 @@ const Administration: React.FC<AdministrationProps> = ({ departments, titles, on
         }
     };
 
-    const maskKey = (key: string) => key.length < 16 ? '***' : `${key.substring(0, 8)}...${key.substring(key.length - 8)}`;
+    const filteredAuditLogs = useMemo(() => {
+        if (!logFilters.actorName) return auditLogs;
+        return auditLogs.filter(log => log.actorName.toLowerCase().includes(logFilters.actorName.toLowerCase()));
+    }, [auditLogs, logFilters.actorName]);
+
+    const handleFetchLogs = async () => {
+        setLogsLoading(true);
+        setLogError(null);
+        try {
+            const logsRef = collection(db, 'AuditLogs');
+            const qConstraints: any[] = [orderBy('timestamp', 'desc')];
+            
+            if (logFilters.startDate) {
+                const start = new Date(logFilters.startDate);
+                start.setUTCHours(0,0,0,0);
+                qConstraints.push(where('timestamp', '>=', Timestamp.fromDate(start)));
+            }
+            if (logFilters.endDate) {
+                 const end = new Date(logFilters.endDate);
+                 end.setUTCHours(23, 59, 59, 999);
+                qConstraints.push(where('timestamp', '<=', Timestamp.fromDate(end)));
+            }
+
+            const q = query(logsRef, ...qConstraints);
+            const querySnapshot = await getDocs(q);
+            const fetchedLogs = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as AuditLog));
+            
+            setAuditLogs(fetchedLogs);
+
+        } catch (err) {
+            console.error("Error fetching audit logs:", err);
+            setLogError("Không thể tải lịch sử hoạt động.");
+        } finally {
+            setLogsLoading(false);
+            setHasSearchedLogs(true);
+        }
+    };
+
+    const handleTabChange = (tab: string) => {
+        if (activeTab === 'auditLog' && tab !== 'auditLog') {
+            setAuditLogs([]);
+            setHasSearchedLogs(false);
+            setLogFilters({ startDate: '', endDate: '', actorName: ''});
+        }
+        setActiveTab(tab);
+    }
+
 
     const renderUserManagement = () => (
         <div className="bg-white p-6 rounded-lg shadow-md mt-6">
@@ -522,6 +599,65 @@ const Administration: React.FC<AdministrationProps> = ({ departments, titles, on
             </div>
         </div>
     );
+    
+    const renderAuditLogTab = () => {
+        const actionMap: { [key: string]: string } = {
+            USER_CREATE: 'Tạo người dùng', USER_UPDATE: 'Cập nhật người dùng', USER_DELETE: 'Xóa người dùng', USER_UNLOCK: 'Mở khóa người dùng', USER_PASSWORD_CHANGE: 'Đổi mật khẩu',
+            CERTIFICATE_CREATE: 'Tạo chứng chỉ', CERTIFICATE_UPDATE: 'Cập nhật chứng chỉ', CERTIFICATE_DELETE: 'Xóa chứng chỉ', CERTIFICATE_UPDATE_ADMIN: 'Cập nhật CC (Admin)', CERTIFICATE_DELETE_ADMIN: 'Xóa CC (Admin)',
+            API_KEY_ADD: 'Thêm API Key', API_KEY_DELETE: 'Xóa API Key',
+            CATEGORY_CREATE: 'Tạo danh mục', CATEGORY_UPDATE: 'Cập nhật danh mục', CATEGORY_DELETE: 'Xóa danh mục',
+            SETTINGS_UPDATE: 'Cập nhật Cài đặt',
+        };
+        
+        return (
+            <div className="bg-white p-6 rounded-lg shadow-md mt-6">
+                <h3 className="text-lg font-semibold text-teal-700 mb-4">Lịch sử Hoạt động</h3>
+                <div className="flex flex-col sm:flex-row gap-4 mb-4 p-4 border rounded-md items-end">
+                    <div className="flex-1">
+                        <label htmlFor="logActorName" className="block text-sm font-medium text-gray-700">Người thực hiện</label>
+                        <input type="text" id="logActorName" value={logFilters.actorName} onChange={e => setLogFilters(f => ({ ...f, actorName: e.target.value }))} className="mt-1 w-full input-style" placeholder="Tìm theo tên..."/>
+                    </div>
+                    <div className="flex-1">
+                        <label htmlFor="logStartDate" className="block text-sm font-medium text-gray-700">Từ ngày</label>
+                        <input type="date" id="logStartDate" value={logFilters.startDate} onChange={e => setLogFilters(f => ({ ...f, startDate: e.target.value }))} className="mt-1 w-full input-style"/>
+                    </div>
+                    <div className="flex-1">
+                        <label htmlFor="logEndDate" className="block text-sm font-medium text-gray-700">Đến ngày</label>
+                        <input type="date" id="logEndDate" value={logFilters.endDate} onChange={e => setLogFilters(f => ({ ...f, endDate: e.target.value }))} className="mt-1 w-full input-style"/>
+                    </div>
+                    <div className="flex-shrink-0 w-full sm:w-auto">
+                        <button onClick={handleFetchLogs} disabled={logsLoading} className="btn-primary w-full">
+                            {logsLoading ? 'Đang tải...' : 'Xem'}
+                        </button>
+                    </div>
+                </div>
+
+                {logsLoading ? <p className="text-center py-8">Đang tải lịch sử...</p> : 
+                 logError ? <p className="text-red-500 text-center py-8">{logError}</p> :
+                 !hasSearchedLogs ? <p className="text-center text-gray-500 py-8">Vui lòng chọn bộ lọc và nhấn "Xem" để tải lịch sử hoạt động.</p> :
+                 filteredAuditLogs.length === 0 ? <p className="text-center text-gray-500 py-8">Không có lịch sử hoạt động nào khớp với bộ lọc.</p> :
+                 (
+                    <div className="overflow-x-auto max-h-[60vh]">
+                        <table className="min-w-full bg-white">
+                            <thead className="bg-gray-50 sticky top-0"><tr>{['Thời gian', 'Người thực hiện', 'Hành động', 'Đối tượng', 'Tên đối tượng'].map(h=><th key={h} className="px-4 py-3 text-left text-sm font-medium text-gray-500 uppercase tracking-wider">{h}</th>)}</tr></thead>
+                            <tbody className="divide-y divide-gray-200">
+                                {filteredAuditLogs.map(log => (
+                                    <tr key={log.id} className="hover:bg-gray-50">
+                                        <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500">{log.timestamp?.toDate().toLocaleString('vi-VN')}</td>
+                                        <td className="px-4 py-3 text-sm font-medium text-gray-900">{log.actorName}</td>
+                                        <td className="px-4 py-3 text-sm text-gray-700">{actionMap[log.action] || log.action}</td>
+                                        <td className="px-4 py-3 text-sm text-gray-500">{log.target.type}</td>
+                                        <td className="px-4 py-3 text-sm text-gray-500">{log.target.name}</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                 )
+                }
+            </div>
+        );
+    };
 
 
     if (loading || settingsLoading || keyLoading) return <div className="text-center p-8">Đang tải dữ liệu quản trị...</div>;
@@ -532,16 +668,18 @@ const Administration: React.FC<AdministrationProps> = ({ departments, titles, on
             <h1 className="text-2xl font-bold text-teal-800 mb-4">Quản trị hệ thống</h1>
             <div className="border-b border-gray-200">
                 <nav className="-mb-px flex flex-wrap gap-x-8 gap-y-2" aria-label="Tabs">
-                    <button onClick={() => setActiveTab('userManagement')} className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-base ${activeTab === 'userManagement' ? 'border-teal-500 text-teal-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}>Tài khoản</button>
-                    <button onClick={() => setActiveTab('categoryManagement')} className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-base ${activeTab === 'categoryManagement' ? 'border-teal-500 text-teal-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}>Danh mục</button>
-                    <button onClick={() => setActiveTab('qrManagement')} className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-base ${activeTab === 'qrManagement' ? 'border-teal-500 text-teal-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}>Quản lý QR</button>
-                    <button onClick={() => setActiveTab('geminiKeyManagement')} className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-base ${activeTab === 'geminiKeyManagement' ? 'border-teal-500 text-teal-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}>Quản lý API</button>
-                    <button onClick={() => setActiveTab('settings')} className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-base ${activeTab === 'settings' ? 'border-teal-500 text-teal-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}>Cài đặt</button>
+                    <button onClick={() => handleTabChange('userManagement')} className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-base ${activeTab === 'userManagement' ? 'border-teal-500 text-teal-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}>Tài khoản</button>
+                    <button onClick={() => handleTabChange('categoryManagement')} className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-base ${activeTab === 'categoryManagement' ? 'border-teal-500 text-teal-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}>Danh mục</button>
+                    <button onClick={() => handleTabChange('auditLog')} className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-base ${activeTab === 'auditLog' ? 'border-teal-500 text-teal-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}>Lịch sử Hoạt động</button>
+                    <button onClick={() => handleTabChange('qrManagement')} className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-base ${activeTab === 'qrManagement' ? 'border-teal-500 text-teal-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}>Quản lý QR</button>
+                    <button onClick={() => handleTabChange('geminiKeyManagement')} className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-base ${activeTab === 'geminiKeyManagement' ? 'border-teal-500 text-teal-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}>Quản lý API</button>
+                    <button onClick={() => handleTabChange('settings')} className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-base ${activeTab === 'settings' ? 'border-teal-500 text-teal-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}>Cài đặt</button>
                 </nav>
             </div>
             
             {activeTab === 'userManagement' && renderUserManagement()}
             {activeTab === 'categoryManagement' && renderCategoryManagement()}
+            {activeTab === 'auditLog' && renderAuditLogTab()}
             {activeTab === 'qrManagement' && renderQRManagement()}
             {activeTab === 'geminiKeyManagement' && renderKeyManagement()}
             {activeTab === 'settings' && renderSettingsTab()}

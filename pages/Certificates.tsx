@@ -14,6 +14,7 @@ import ConfirmDeleteModal from '../components/ConfirmDeleteModal';
 import PlusIcon from '../components/icons/PlusIcon';
 import CertificateAddModal from '../components/CertificateAddModal';
 import { transformGoogleDriveUrl, deleteFromDrive, extractFileIdFromUrl } from '../utils/driveUploader';
+import { logAction } from '../utils/logger';
 
 
 interface CertificatesProps {
@@ -147,6 +148,7 @@ const Certificates: React.FC<CertificatesProps> = ({ user, geminiApiKey }) => {
             setCertificates(prevCerts => 
                 prevCerts.map(c => c.id === editingCertificate.id ? (updatedCertForState as Certificate) : c)
             );
+            await logAction(user, 'CERTIFICATE_UPDATE', { type: 'Certificate', id: editingCertificate.id, name: updatedData.name || editingCertificate.name }, { changes: updatedData });
             setEditingCertificate(null);
         } catch (err) {
             console.error("Error updating certificate:", err);
@@ -175,6 +177,7 @@ const Certificates: React.FC<CertificatesProps> = ({ user, geminiApiKey }) => {
 
             setCertificates(prev => [newCert, ...prev].sort((a,b) => b.date.toDate().getTime() - a.date.toDate().getTime()));
             setIsAddModalOpen(false);
+            await logAction(user, 'CERTIFICATE_CREATE', { type: 'Certificate', id: docRef.id, name: newCert.name }, { credits: newCert.credits });
 
         } catch (err) {
             console.error("Error adding certificate:", err);
@@ -193,6 +196,7 @@ const Certificates: React.FC<CertificatesProps> = ({ user, geminiApiKey }) => {
             const certDocRef = doc(db, 'Certificates', deletingCertificate.id);
             await deleteDoc(certDocRef);
             setCertificates(prevCerts => prevCerts.filter(c => c.id !== deletingCertificate.id));
+            await logAction(user, 'CERTIFICATE_DELETE', { type: 'Certificate', id: deletingCertificate.id, name: deletingCertificate.name });
             setDeletingCertificate(null);
         } catch (err) {
             console.error("Error deleting certificate:", err);

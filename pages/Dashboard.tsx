@@ -3,6 +3,7 @@
 
 
 
+
 import React, { useState } from 'react';
 import Header from '../components/Header';
 import Menubar from '../components/Menubar';
@@ -49,7 +50,8 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onUserUpdate, dep
         return <Profile user={user} onUserUpdate={onUserUpdate} departments={departments} titles={titles} settings={settings} />;
       case 'Quản trị':
         if (user.role === 'admin') {
-          return <Administration 
+          return <Administration
+                    currentUser={user}
                     departments={departments} 
                     titles={titles} 
                     onKeysUpdate={onKeysUpdate} 
@@ -64,7 +66,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onUserUpdate, dep
         return <Certificates user={user} geminiApiKey={geminiApiKey} />;
       case 'Báo Cáo':
          if (user.role === 'admin' || user.role === 'reporter' || user.role === 'reporter_user') {
-          // FIX: Pass geminiApiKey to the Reports component.
           return <Reports user={user} settings={settings} departments={departments} titles={titles} geminiApiKey={geminiApiKey} />;
         }
         return <p>Bạn không có quyền truy cập trang này.</p>;
